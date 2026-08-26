@@ -3,11 +3,29 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List
+import __main__
 
-from microai_model import MICROAI  # noqa: F401  (needed for unpickling)
+# 1. Import ALL custom classes from your model file
+from microai_model import (
+    MICROAI,
+    QuantileNormalizer,
+    ComBatCorrection,
+    KNNImputer,
+    AttentionFeatureSelector,
+    AdaptiveEnsembleClassifier
+)
 
 app = FastAPI(title="MICRO-AI Prediction API")
 
+# 2. Map ALL of them to the __main__ namespace so joblib can unpickle the full pipeline
+setattr(__main__, "MICROAI", MICROAI)
+setattr(__main__, "QuantileNormalizer", QuantileNormalizer)
+setattr(__main__, "ComBatCorrection", ComBatCorrection)
+setattr(__main__, "KNNImputer", KNNImputer)
+setattr(__main__, "AttentionFeatureSelector", AttentionFeatureSelector)
+setattr(__main__, "AdaptiveEnsembleClassifier", AdaptiveEnsembleClassifier)
+
+# 3. Now it is safe to load the model
 MODEL_PATH = "/workspaces/microai_api/models/GSE7390_model.joblib"
 model = joblib.load(MODEL_PATH)
 
