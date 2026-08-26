@@ -89,11 +89,12 @@ async def predict_csv(model_name: str, file: UploadFile = File(...)):
     try:
         # 2. Read the uploaded file directly into memory using Pandas
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
+        df = pd.read_csv(io.BytesIO(contents),header=None)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
 
     # 3. Validate dimensions
+    df = df.T
     X = df.values
     expected_genes = model.training_info.get("n_genes_original")
     if expected_genes and X.shape[1] != expected_genes:
