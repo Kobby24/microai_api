@@ -1,4 +1,5 @@
 import { CheckCircle2, Table2 } from 'lucide-react'
+import { interpretClass, interpretPrediction, summarizeBatch } from '../interpret'
 
 function formatPercent(value) {
   const numeric = Number(value)
@@ -24,19 +25,31 @@ function ProbabilityBar({ value }) {
   )
 }
 
-function JsonResults({ result }) {
+function JsonResults({ result, model }) {
+  const interpretation = interpretPrediction(result.prediction, model)
   const entries = Object.entries(result.class_probabilities || {})
 
   return (
     <div className="space-y-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Predicted class
+          {interpretation.target}
         </p>
         <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-          {result.prediction}
+          {interpretation.classLabel}
         </p>
+        {interpretation.raw && interpretation.raw !== interpretation.classLabel && (
+          <p className="mt-1 text-sm text-slate-500">
+            Model output: <span className="font-medium text-slate-700">{interpretation.raw}</span>
+          </p>
+        )}
       </div>
+
+      {interpretation.summary && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
+          {interpretation.summary}
+        </p>
+      )}
 
       <div>
         <p className="mb-2 text-sm font-medium text-slate-700">Confidence probability</p>
@@ -52,19 +65,19 @@ function JsonResults({ result }) {
                 <div className="mb-1 flex items-center justify-between text-sm">
                   <span
                     className={
-                      label === result.prediction
+                      String(label) === String(result.prediction)
                         ? 'font-semibold text-blue-800'
                         : 'text-slate-600'
                     }
                   >
-                    {label.replaceAll('_', ' ')}
+                    {interpretClass(label, model)}
                   </span>
                   <span className="tabular-nums text-slate-500">{formatPercent(value)}</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
                   <div
                     className={`h-full rounded-full ${
-                      label === result.prediction ? 'bg-blue-700' : 'bg-slate-400'
+                      String(label) === String(result.prediction) ? 'bg-blue-700' : 'bg-slate-400'
                     }`}
                     style={{ width: `${Math.max(0, Math.min(100, Number(value) * 100 || 0))}%` }}
                   />
@@ -74,12 +87,20 @@ function JsonResults({ result }) {
           </ul>
         </div>
       )}
+
+      <p className="text-xs text-slate-400">
+        Research estimate only. Not a clinical diagnosis or treatment recommendation.
+      </p>
     </div>
   )
 }
 
-function CsvResults({ result }) {
+function CsvResults({ result, model }) {
   const rows = (result.results || []).slice(0, 10)
+  const counts = summarizeBatch(result.results, model)
+  const countSummary = Object.entries(counts)
+    .map(([label, count]) => `${count} ${label}`)
+    .join(' · ')
 
   return (
     <div className="space-y-5">
@@ -89,6 +110,7 @@ function CsvResults({ result }) {
           <p className="font-semibold text-slate-900">
             Successfully processed {result.samples_processed}{' '}
             {result.samples_processed === 1 ? 'sample' : 'samples'}
+            {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}
           </p>
           <p className="mt-0.5 text-sm text-slate-600">
             Source file: <span className="font-medium">{result.filename}</span>
@@ -96,6 +118,9 @@ function CsvResults({ result }) {
               ? ` · showing the first 10 of ${result.results.length} results`
               : ''}
           </p>
+          {countSummary && (
+            <p className="mt-2 text-sm text-slate-700">Breakdown: {countSummary}</p>
+          )}
         </div>
       </div>
 
@@ -104,7 +129,10 @@ function CsvResults({ result }) {
           <thead className="bg-slate-50">
             <tr>
               <th className="px-4 py-2.5 font-semibold text-slate-600">Sample index</th>
-              <th className="px-4 py-2.5 font-semibold text-slate-600">Prediction</th>
+              <th className="px-4 py-2.5 font-semibold text-slate-600">
+                {model?.predicts_label || 'Prediction'}
+              </th>
+              <th className="px-4 py-2.5 font-semibold text-slate-600">Model output</th>
               <th className="px-4 py-2.5 font-semibold text-slate-600">Confidence</th>
             </tr>
           </thead>
@@ -112,7 +140,10 @@ function CsvResults({ result }) {
             {rows.map((row) => (
               <tr key={row.sample_index}>
                 <td className="px-4 py-2.5 tabular-nums text-slate-600">{row.sample_index}</td>
-                <td className="px-4 py-2.5 font-medium text-slate-900">{row.prediction}</td>
+                <td className="px-4 py-2.5 font-medium text-slate-900">
+                  {interpretClass(row.prediction, model)}
+                </td>
+                <td className="px-4 py-2.5 tabular-nums text-slate-500">{row.prediction}</td>
                 <td className="px-4 py-2.5 tabular-nums text-slate-700">
                   {formatPercent(row.probability)}
                 </td>
@@ -125,7 +156,7 @@ function CsvResults({ result }) {
   )
 }
 
-export default function Results({ jsonResult, csvResult }) {
+export default function Results({ jsonResult, csvResult, model }) {
   const hasJson = Boolean(jsonResult)
   const hasCsv = Boolean(csvResult)
 
@@ -142,8 +173,8 @@ export default function Results({ jsonResult, csvResult }) {
         </p>
       )}
 
-      {hasJson && <JsonResults result={jsonResult} />}
-      {hasCsv && <CsvResults result={csvResult} />}
+      {hasJson && <JsonResults result={jsonResult} model={model} />}
+      {hasCsv && <CsvResults result={csvResult} model={model} />}
     </section>
   )
 }

@@ -45,6 +45,11 @@ export async function fetchHealth() {
   return data
 }
 
+export async function fetchModels() {
+  const { data } = await client.get('/models')
+  return Array.isArray(data?.models) ? data.models : []
+}
+
 export async function predictJson(modelName, expression) {
   const { data } = await client.post(`/predict/${encodeURIComponent(modelName)}`, {
     expression,

@@ -1,6 +1,9 @@
 import { Info } from 'lucide-react'
+import { formatGeneCount } from '../interpret'
 
-export default function JsonTab({ value, onChange, onSubmit, loading, disabled }) {
+export default function JsonTab({ value, onChange, onSubmit, loading, disabled, model }) {
+  const geneCount = formatGeneCount(model?.expected_genes)
+
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
@@ -22,7 +25,8 @@ export default function JsonTab({ value, onChange, onSubmit, loading, disabled }
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
         <p>
           <span className="font-semibold">Input must be a valid JSON array of floats.</span>{' '}
-          The length must exactly match the number of genes the model was trained on.
+          The length must exactly match the number of genes the model was trained on
+          {geneCount ? ` (${geneCount} for ${model.display_name || model.name})` : ''}.
         </p>
       </div>
 

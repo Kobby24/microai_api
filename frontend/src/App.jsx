@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Braces, FileSpreadsheet } from 'lucide-react'
-import { extractApiError, fetchHealth, predictCsv, predictJson } from './api'
+import { extractApiError, fetchHealth, fetchModels, predictCsv, predictJson } from './api'
 import Header from './components/Header'
 import ModelSelector from './components/ModelSelector'
 import ErrorBanner from './components/ErrorBanner'
@@ -58,13 +58,26 @@ export default function App() {
     async function loadModels() {
       setModelsLoading(true)
       try {
-        const data = await fetchHealth()
+        let loaded = []
+        try {
+          loaded = await fetchModels()
+        } catch (err) {
+          if (err.response?.status !== 404) throw err
+          const health = await fetchHealth()
+          loaded = (health.loaded_models || []).map((name) => ({
+            name,
+            display_name: name.toUpperCase(),
+            predicts: '',
+            predicts_label: '',
+            expected_genes: null,
+            label_meanings: {},
+          }))
+        }
         if (cancelled) return
-        const loaded = Array.isArray(data.loaded_models) ? data.loaded_models : []
         setModels(loaded)
-        setApiStatus(data.status === 'ok' ? 'ok' : 'error')
+        setApiStatus('ok')
         if (loaded.length === 1) {
-          setSelectedModel(loaded[0])
+          setSelectedModel(loaded[0].name)
         }
       } catch (err) {
         if (cancelled) return
@@ -133,6 +146,15 @@ export default function App() {
     setError(fileError || '')
   }
 
+  function handleModelChange(name) {
+    setSelectedModel(name)
+    setJsonResult(null)
+    setCsvResult(null)
+    setError('')
+  }
+
+  const selectedMeta = models.find((model) => model.name === selectedModel) || null
+
   const tabs = [
     { id: 'json', label: 'Single Sample (JSON)', icon: Braces },
     { id: 'csv', label: 'Batch Predict (CSV)', icon: FileSpreadsheet },
@@ -146,7 +168,7 @@ export default function App() {
         <ModelSelector
           models={models}
           selectedModel={selectedModel}
-          onChange={setSelectedModel}
+          onChange={handleModelChange}
           loading={modelsLoading}
           disabled={models.length === 0}
         />
@@ -180,6 +202,7 @@ export default function App() {
               onSubmit={handleJsonSubmit}
               loading={loading}
               disabled={loading || !selectedModel}
+              model={selectedMeta}
             />
           ) : (
             <CsvTab
@@ -190,12 +213,13 @@ export default function App() {
               onSubmit={handleCsvSubmit}
               loading={loading}
               disabled={loading || !selectedModel}
+              model={selectedMeta}
             />
           )}
         </section>
 
         <ErrorBanner message={error} />
-        <Results jsonResult={jsonResult} csvResult={csvResult} />
+        <Results jsonResult={jsonResult} csvResult={csvResult} model={selectedMeta} />
       </main>
     </div>
   )

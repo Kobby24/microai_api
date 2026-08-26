@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { FileSpreadsheet, Info, Upload, X } from 'lucide-react'
+import { formatGeneCount } from '../interpret'
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -16,6 +17,7 @@ export default function CsvTab({
   onSubmit,
   loading,
   disabled,
+  model,
 }) {
   const inputRef = useRef(null)
 
@@ -95,7 +97,11 @@ export default function CsvTab({
         <p>
           <span className="font-semibold">Accepts .csv files only.</span> Each row represents a
           patient sample, and columns must represent gene expression values matching the exact
-          training dimension.
+          training dimension
+          {formatGeneCount(model?.expected_genes)
+            ? ` (${formatGeneCount(model.expected_genes)} genes for ${model.display_name || model.name})`
+            : ''}
+          .
         </p>
       </div>
 
