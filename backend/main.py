@@ -35,8 +35,8 @@ setattr(__main__, "AttentionFeatureSelector", AttentionFeatureSelector)
 setattr(__main__, "AdaptiveEnsembleClassifier", AdaptiveEnsembleClassifier)
 
 MODELS = {
-    "gse7390": joblib.load("/workspaces/microai_api/models/GSE7390_model.joblib"),
-    # "gse1234": joblib.load(...) 
+    "gse7390": joblib.load("./models/GSE7390_model.joblib"),
+    "gse2034": joblib.load("./models/GSE2034_model.joblib") 
 }
 
 @app.get("/health")
@@ -55,6 +55,7 @@ class PredictionResponse(BaseModel):
 
 @app.post("/predict/{model_name}", response_model=PredictionResponse)
 def predict_json(model_name: str, request: PredictionRequest):
+    model_name = model_name.lower()
     if model_name not in MODELS:
         raise HTTPException(status_code=404, detail="Model not found")
     
@@ -75,6 +76,7 @@ def predict_json(model_name: str, request: PredictionRequest):
 # --- NEW CSV BATCH ENDPOINT ---
 @app.post("/predict_csv/{model_name}")
 async def predict_csv(model_name: str, file: UploadFile = File(...)):
+    model_name = model_name.lower()
     if model_name not in MODELS:
         raise HTTPException(status_code=404, detail="Model not found")
     
