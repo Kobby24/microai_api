@@ -1,11 +1,12 @@
 import joblib
 import numpy as np
-from fastapi import FastAPI, HTTPException
+import pandas as pd
+import io
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 from typing import List
 import __main__
 
-# 1. Import ALL custom classes from your model file
 from microai_model import (
     MICROAI,
     QuantileNormalizer,
@@ -17,7 +18,6 @@ from microai_model import (
 
 app = FastAPI(title="MICRO-AI Prediction API")
 
-# 2. Map ALL of them to the __main__ namespace so joblib can unpickle the full pipeline
 setattr(__main__, "MICROAI", MICROAI)
 setattr(__main__, "QuantileNormalizer", QuantileNormalizer)
 setattr(__main__, "ComBatCorrection", ComBatCorrection)
@@ -25,49 +25,83 @@ setattr(__main__, "KNNImputer", KNNImputer)
 setattr(__main__, "AttentionFeatureSelector", AttentionFeatureSelector)
 setattr(__main__, "AdaptiveEnsembleClassifier", AdaptiveEnsembleClassifier)
 
-# 3. Now it is safe to load the model
-MODEL_PATH = "/workspaces/microai_api/models/GSE7390_model.joblib"
-model = joblib.load(MODEL_PATH)
+MODELS = {
+    "gse7390": joblib.load("/workspaces/microai_api/models/GSE7390_model.joblib"),
+    # "gse1234": joblib.load(...) 
+}
 
-
+# --- EXISTING JSON ENDPOINT ---
 class PredictionRequest(BaseModel):
-    expression: List[float] = Field(
-        ..., description="Gene expression values, same order/length as training data"
-    )
-
+    expression: List[float] = Field(...)
 
 class PredictionResponse(BaseModel):
     prediction: str
     probability: float
     class_probabilities: dict
 
-
-@app.post("/predict", response_model=PredictionResponse)
-def predict(request: PredictionRequest):
+@app.post("/predict/{model_name}", response_model=PredictionResponse)
+def predict_json(model_name: str, request: PredictionRequest):
+    if model_name not in MODELS:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model = MODELS[model_name]
     X = np.array(request.expression, dtype=float).reshape(1, -1)
 
-    expected_n_genes = model.training_info.get("n_genes_original")
-    if expected_n_genes and X.shape[1] != expected_n_genes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Expected {expected_n_genes} gene values, got {X.shape[1]}",
-        )
+    expected_genes = model.training_info.get("n_genes_original")
+    if expected_genes and X.shape[1] != expected_genes:
+        raise HTTPException(status_code=400, detail=f"Expected {expected_genes} genes, got {X.shape[1]}")
 
-    try:
-        pred = model.predict(X)[0]
-        proba = model.predict_proba(X)[0]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    pred = model.predict(X)[0]
+    proba = model.predict_proba(X)[0]
     class_probs = {str(cls): float(p) for cls, p in zip(model.classes_, proba)}
 
-    return PredictionResponse(
-        prediction=str(pred),
-        probability=float(max(proba)),
-        class_probabilities=class_probs,
-    )
+    return PredictionResponse(prediction=str(pred), probability=float(max(proba)), class_probabilities=class_probs)
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+# --- NEW CSV BATCH ENDPOINT ---
+@app.post("/predict_csv/{model_name}")
+async def predict_csv(model_name: str, file: UploadFile = File(...)):
+    if model_name not in MODELS:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    # 1. Validate file type
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    model = MODELS[model_name]
+    
+    try:
+        # 2. Read the uploaded file directly into memory using Pandas
+        contents = await file.read()
+        df = pd.read_csv(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
+
+    # 3. Validate dimensions
+    X = df.values
+    expected_genes = model.training_info.get("n_genes_original")
+    if expected_genes and X.shape[1] != expected_genes:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Expected {expected_genes} columns (genes) for {model_name}, got {X.shape[1]}"
+        )
+
+    # 4. Generate predictions for all rows (patients) in the CSV
+    try:
+        preds = model.predict(X)
+        probas = model.predict_proba(X)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+    # 5. Format the results
+    results = []
+    for i in range(len(preds)):
+        row_probs = {str(cls): float(p) for cls, p in zip(model.classes_, probas[i])}
+        results.append({
+            "sample_index": i,
+            "prediction": str(preds[i]),
+            "probability": float(max(probas[i])),
+            "class_probabilities": row_probs
+        })
+
+    return {"filename": file.filename, "samples_processed": len(results), "results": results}
