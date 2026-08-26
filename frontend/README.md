@@ -4,7 +4,7 @@ Single-page React client for the MICRO-AI FastAPI prediction service.
 
 ## Run
 
-Start the FastAPI backend on `http://localhost:8000`, then:
+The app calls the hosted API at `https://microai-api.onrender.com`.
 
 ```bash
 npm install

@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-export const API_BASE = 'http://localhost:8000'
+export const API_BASE = 'https://microai-api.onrender.com'
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -30,7 +30,7 @@ export function extractApiError(error) {
   }
 
   if (error.request && !error.response) {
-    return 'Unable to reach the MICRO-AI API. Confirm the backend is running at http://localhost:8000.'
+    return 'Unable to reach the MICRO-AI API. Confirm the backend is available at https://microai-api.onrender.com.'
   }
 
   if (error.response?.status) {
