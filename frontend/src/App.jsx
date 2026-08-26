@@ -1,0 +1,202 @@
+import { useEffect, useState } from 'react'
+import { Braces, FileSpreadsheet } from 'lucide-react'
+import { extractApiError, fetchHealth, predictCsv, predictJson } from './api'
+import Header from './components/Header'
+import ModelSelector from './components/ModelSelector'
+import ErrorBanner from './components/ErrorBanner'
+import JsonTab from './components/JsonTab'
+import CsvTab from './components/CsvTab'
+import Results from './components/Results'
+
+function parseExpression(raw) {
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    throw new Error('Please paste a JSON array of gene expression values.')
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error('Input must be a valid JSON array of floats.')
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('Input must be a JSON array of floats, e.g. [2.45, 1.02, 5.6].')
+  }
+
+  if (parsed.length === 0) {
+    throw new Error('The expression array cannot be empty.')
+  }
+
+  return parsed.map((value, index) => {
+    const numeric = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(numeric)) {
+      throw new Error(`Value at index ${index} is not a valid float.`)
+    }
+    return numeric
+  })
+}
+
+export default function App() {
+  const [models, setModels] = useState([])
+  const [selectedModel, setSelectedModel] = useState('')
+  const [apiStatus, setApiStatus] = useState('loading')
+  const [modelsLoading, setModelsLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('json')
+  const [jsonInput, setJsonInput] = useState('')
+  const [csvFile, setCsvFile] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [jsonResult, setJsonResult] = useState(null)
+  const [csvResult, setCsvResult] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadModels() {
+      setModelsLoading(true)
+      try {
+        const data = await fetchHealth()
+        if (cancelled) return
+        const loaded = Array.isArray(data.loaded_models) ? data.loaded_models : []
+        setModels(loaded)
+        setApiStatus(data.status === 'ok' ? 'ok' : 'error')
+        if (loaded.length === 1) {
+          setSelectedModel(loaded[0])
+        }
+      } catch (err) {
+        if (cancelled) return
+        setModels([])
+        setApiStatus('error')
+        setError(extractApiError(err))
+      } finally {
+        if (!cancelled) setModelsLoading(false)
+      }
+    }
+
+    loadModels()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function requireModel() {
+    if (!selectedModel) {
+      throw new Error('Select a model before running a prediction.')
+    }
+  }
+
+  async function handleJsonSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setJsonResult(null)
+    setCsvResult(null)
+
+    try {
+      requireModel()
+      const expression = parseExpression(jsonInput)
+      setLoading(true)
+      const result = await predictJson(selectedModel, expression)
+      setJsonResult(result)
+    } catch (err) {
+      setError(err.response || err.request ? extractApiError(err) : err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCsvSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setJsonResult(null)
+    setCsvResult(null)
+
+    try {
+      requireModel()
+      if (!csvFile) {
+        throw new Error('Upload a .csv file before running a batch prediction.')
+      }
+      setLoading(true)
+      const result = await predictCsv(selectedModel, csvFile)
+      setCsvResult(result)
+    } catch (err) {
+      setError(err.response || err.request ? extractApiError(err) : err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleCsvFileChange(file, fileError) {
+    setCsvFile(file)
+    setError(fileError || '')
+  }
+
+  const tabs = [
+    { id: 'json', label: 'Single Sample (JSON)', icon: Braces },
+    { id: 'csv', label: 'Batch Predict (CSV)', icon: FileSpreadsheet },
+  ]
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Header apiStatus={apiStatus} />
+
+      <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+        <ModelSelector
+          models={models}
+          selectedModel={selectedModel}
+          onChange={setSelectedModel}
+          loading={modelsLoading}
+          disabled={models.length === 0}
+        />
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex border-b border-slate-200">
+            {tabs.map(({ id, label, icon: Icon }) => {
+              const selected = activeTab === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveTab(id)}
+                  className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+                    selected
+                      ? 'border-blue-700 text-blue-800'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+
+          {activeTab === 'json' ? (
+            <JsonTab
+              value={jsonInput}
+              onChange={setJsonInput}
+              onSubmit={handleJsonSubmit}
+              loading={loading}
+              disabled={loading || !selectedModel}
+            />
+          ) : (
+            <CsvTab
+              file={csvFile}
+              onFileChange={handleCsvFileChange}
+              isDragging={isDragging}
+              onDragState={setIsDragging}
+              onSubmit={handleCsvSubmit}
+              loading={loading}
+              disabled={loading || !selectedModel}
+            />
+          )}
+        </section>
+
+        <ErrorBanner message={error} />
+        <Results jsonResult={jsonResult} csvResult={csvResult} />
+      </main>
+    </div>
+  )
+}

@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import io
 from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List
 import __main__
@@ -18,6 +19,14 @@ from microai_model import (
 
 app = FastAPI(title="MICRO-AI Prediction API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 setattr(__main__, "MICROAI", MICROAI)
 setattr(__main__, "QuantileNormalizer", QuantileNormalizer)
 setattr(__main__, "ComBatCorrection", ComBatCorrection)
@@ -29,6 +38,11 @@ MODELS = {
     "gse7390": joblib.load("/workspaces/microai_api/models/GSE7390_model.joblib"),
     # "gse1234": joblib.load(...) 
 }
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "loaded_models": list(MODELS.keys())}
+
 
 # --- EXISTING JSON ENDPOINT ---
 class PredictionRequest(BaseModel):
