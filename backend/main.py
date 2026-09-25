@@ -14,7 +14,12 @@ from microai_model import (
     AttentionFeatureSelector,
     AdaptiveEnsembleClassifier
 )
-from tabular import is_supported_table_filename, read_expression_table, table_kind
+from tabular import (
+    is_supported_table_filename,
+    prepare_expression_matrix,
+    read_expression_table,
+    table_kind,
+)
 
 app = FastAPI(title="MICRO-AI Prediction API")
 
@@ -218,20 +223,12 @@ async def predict_csv(model_name: str, file: UploadFile = File(...)):
         # 2. Read the uploaded file directly into memory using Pandas
         contents = await file.read()
         df = read_expression_table(contents, filename)
+        expected_genes = model.training_info.get("n_genes_original")
+        X, sample_ids = prepare_expression_matrix(df, expected_genes, model_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading {kind}: {str(e)}")
-
-    # 3. Validate dimensions against the selected model's expected gene count
-    df = df.T
-    X = df.values
-    expected_genes = model.training_info.get("n_genes_original")
-    if expected_genes and X.shape[1] != expected_genes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Expected {expected_genes} columns (genes) for {model_name}, got {X.shape[1]}"
-        )
 
     # 4. Generate predictions for all rows (patients) in the file
     try:
@@ -244,11 +241,14 @@ async def predict_csv(model_name: str, file: UploadFile = File(...)):
     results = []
     for i in range(len(preds)):
         row_probs = {str(cls): float(p) for cls, p in zip(model.classes_, probas[i])}
-        results.append({
+        row = {
             "sample_index": i,
             "prediction": str(preds[i]),
             "probability": float(max(probas[i])),
             "class_probabilities": row_probs
-        })
+        }
+        if sample_ids:
+            row["sample_id"] = sample_ids[i]
+        results.append(row)
 
     return {"filename": file.filename, "samples_processed": len(results), "results": results}
