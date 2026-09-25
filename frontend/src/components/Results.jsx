@@ -97,6 +97,7 @@ function JsonResults({ result, model }) {
 
 function CsvResults({ result, model }) {
   const rows = (result.results || []).slice(0, 10)
+  const hasIds = (result.results || []).some((row) => row.sample_id)
   const counts = summarizeBatch(result.results, model)
   const countSummary = Object.entries(counts)
     .map(([label, count]) => `${count} ${label}`)
@@ -128,7 +129,9 @@ function CsvResults({ result, model }) {
         <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-4 py-2.5 font-semibold text-slate-600">Sample index</th>
+              <th className="px-4 py-2.5 font-semibold text-slate-600">
+                {hasIds ? 'Sample ID' : 'Sample index'}
+              </th>
               <th className="px-4 py-2.5 font-semibold text-slate-600">
                 {model?.predicts_label || 'Prediction'}
               </th>
@@ -139,7 +142,9 @@ function CsvResults({ result, model }) {
           <tbody className="divide-y divide-slate-100 bg-white">
             {rows.map((row) => (
               <tr key={row.sample_index}>
-                <td className="px-4 py-2.5 tabular-nums text-slate-600">{row.sample_index}</td>
+                <td className="px-4 py-2.5 text-slate-600">
+                  {row.sample_id || row.sample_index}
+                </td>
                 <td className="px-4 py-2.5 font-medium text-slate-900">
                   {interpretClass(row.prediction, model)}
                 </td>

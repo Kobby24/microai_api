@@ -66,7 +66,9 @@ export default function CsvTab({
         <p className="text-sm font-semibold text-slate-800">
           Drop a CSV or TSV file here, or click to browse
         </p>
-        <p className="mt-1 text-xs text-slate-500">.csv and .tsv · one patient sample per row</p>
+        <p className="mt-1 text-xs text-slate-500">
+          .csv and .tsv · single patient = gene column · multiple patients = one row each
+        </p>
       </div>
 
       {file && (
@@ -96,13 +98,15 @@ export default function CsvTab({
       <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <p>
-          <span className="font-semibold">Accepts .csv and .tsv files.</span> Each row represents a
-          patient sample, and columns must represent gene expression values matching the exact
-          training dimension
+          <span className="font-semibold">Two layouts, both need the same gene count</span>
           {formatGeneCount(model?.expected_genes)
-            ? ` (${formatGeneCount(model.expected_genes)} genes for ${model.display_name || model.name})`
+            ? ` (${formatGeneCount(model.expected_genes)} for ${model.display_name || model.name})`
             : ''}
-          .
+          .{' '}
+          <span className="font-medium">Single patient:</span> one column of gene values, one row
+          per gene — the original format.{' '}
+          <span className="font-medium">Multiple patients:</span> one row per patient and one
+          column per gene, with an optional sample-ID column.
         </p>
       </div>
 

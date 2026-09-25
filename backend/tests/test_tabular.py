@@ -3,6 +3,7 @@ import pytest
 
 from tabular import (
     is_supported_table_filename,
+    prepare_expression_matrix,
     read_expression_table,
     table_kind,
     table_separator,
@@ -47,3 +48,36 @@ def test_malformed_tsv_raises_user_friendly_error():
     malformed = b"1.0\t2.0\n3.0\t4.0\t5.0\n"
     with pytest.raises(ValueError, match="could not be parsed"):
         read_expression_table(malformed, "broken.tsv")
+
+
+def test_prepare_keeps_four_patient_rows_from_being_read_as_four_genes():
+    df = pd.DataFrame([
+        ["sample_id", "g1", "g2", "g3"],
+        ["P001", 1.5, 2.0, 3.0],
+        ["P002", -0.5, 1.0, 4.0],
+        ["P003", 2.0, 1.0, 1.0],
+        ["P004", -1.0, 0.5, 0.2],
+    ])
+    X, sample_ids = prepare_expression_matrix(df, expected_genes=3, model_name="gse7390")
+
+    assert X.shape == (4, 3)
+    assert sample_ids == ["P001", "P002", "P003", "P004"]
+
+
+def test_prepare_single_patient_uses_original_gene_column():
+    df = pd.DataFrame([[1.5], [2.0], [3.0]])
+    X, sample_ids = prepare_expression_matrix(df, expected_genes=3, model_name="gse7390")
+
+    assert X.shape == (1, 3)
+    assert sample_ids is None
+    assert list(X[0]) == [1.5, 2.0, 3.0]
+
+
+def test_prepare_rejects_multi_patient_gene_columns():
+    df = pd.DataFrame([
+        [1.5, -0.5],
+        [2.0, 1.0],
+        [3.0, 4.0],
+    ])
+    with pytest.raises(ValueError, match="one row per patient"):
+        prepare_expression_matrix(df, expected_genes=3, model_name="gse7390")
