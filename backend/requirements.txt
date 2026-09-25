@@ -17,4 +17,8 @@ uvicorn[standard]==0.30.1
 pydantic==2.7.4
 
 # --- Optional but commonly needed for this kind of pipeline ---
-python-multipart==0.0.9   # if you ever accept file uploads (e.g. CSV of expression data)
+python-multipart==0.0.9   # file uploads (CSV / TSV expression tables)
+
+# --- Tests ---
+pytest==8.3.3
+httpx==0.27.2
