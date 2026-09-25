@@ -1,7 +1,5 @@
 import joblib
 import numpy as np
-import pandas as pd
-import io
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -16,6 +14,7 @@ from microai_model import (
     AttentionFeatureSelector,
     AdaptiveEnsembleClassifier
 )
+from tabular import is_supported_table_filename, read_expression_table, table_kind
 
 app = FastAPI(title="MICRO-AI Prediction API")
 
@@ -200,37 +199,41 @@ def predict_json(model_name: str, request: PredictionRequest):
     return PredictionResponse(prediction=str(pred), probability=float(max(proba)), class_probabilities=class_probs)
 
 
-# --- NEW CSV BATCH ENDPOINT ---
+# --- CSV / TSV BATCH ENDPOINT ---
 @app.post("/predict_csv/{model_name}")
 async def predict_csv(model_name: str, file: UploadFile = File(...)):
     model_name = model_name.lower()
     if model_name not in MODELS:
         raise HTTPException(status_code=404, detail="Model not found")
-    
-    # 1. Validate file type
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    # 1. Validate file type (.csv and .tsv; MIME is not required — browsers vary)
+    filename = file.filename or ""
+    if not is_supported_table_filename(filename):
+        raise HTTPException(status_code=400, detail="Only .csv and .tsv files are supported")
 
     model = MODELS[model_name]
-    
+    kind = table_kind(filename)
+
     try:
         # 2. Read the uploaded file directly into memory using Pandas
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents),header=None)
+        df = read_expression_table(contents, filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error reading {kind}: {str(e)}")
 
-    # 3. Validate dimensions
+    # 3. Validate dimensions against the selected model's expected gene count
     df = df.T
     X = df.values
     expected_genes = model.training_info.get("n_genes_original")
     if expected_genes and X.shape[1] != expected_genes:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Expected {expected_genes} columns (genes) for {model_name}, got {X.shape[1]}"
         )
 
-    # 4. Generate predictions for all rows (patients) in the CSV
+    # 4. Generate predictions for all rows (patients) in the file
     try:
         preds = model.predict(X)
         probas = model.predict_proba(X)

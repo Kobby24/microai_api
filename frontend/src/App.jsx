@@ -129,7 +129,7 @@ export default function App() {
     try {
       requireModel()
       if (!csvFile) {
-        throw new Error('Upload a .csv file before running a batch prediction.')
+        throw new Error('Upload a .csv or .tsv file before running a batch prediction.')
       }
       setLoading(true)
       const result = await predictCsv(selectedModel, csvFile)
@@ -157,7 +157,7 @@ export default function App() {
 
   const tabs = [
     { id: 'json', label: 'Single Sample (JSON)', icon: Braces },
-    { id: 'csv', label: 'Batch Predict (CSV)', icon: FileSpreadsheet },
+    { id: 'csv', label: 'Batch Predict (CSV / TSV)', icon: FileSpreadsheet },
   ]
 
   return (

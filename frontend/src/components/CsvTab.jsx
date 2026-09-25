@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { FileSpreadsheet, Info, Upload, X } from 'lucide-react'
+import { BATCH_ACCEPT, isBatchExpressionFile } from '../batchFile'
 import { formatGeneCount } from '../interpret'
 
 function formatBytes(bytes) {
@@ -23,8 +24,8 @@ export default function CsvTab({
 
   function acceptFile(nextFile) {
     if (!nextFile) return
-    if (!nextFile.name.toLowerCase().endsWith('.csv')) {
-      onFileChange(null, 'Accepts .csv files only.')
+    if (!isBatchExpressionFile(nextFile.name)) {
+      onFileChange(null, 'Accepts .csv and .tsv files only.')
       return
     }
     onFileChange(nextFile)
@@ -55,7 +56,7 @@ export default function CsvTab({
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,text/csv"
+          accept={BATCH_ACCEPT}
           className="hidden"
           onChange={(event) => acceptFile(event.target.files?.[0])}
         />
@@ -63,9 +64,9 @@ export default function CsvTab({
           <Upload className="h-5 w-5" />
         </div>
         <p className="text-sm font-semibold text-slate-800">
-          Drop a CSV file here, or click to browse
+          Drop a CSV or TSV file here, or click to browse
         </p>
-        <p className="mt-1 text-xs text-slate-500">.csv only · one patient sample per row</p>
+        <p className="mt-1 text-xs text-slate-500">.csv and .tsv · one patient sample per row</p>
       </div>
 
       {file && (
@@ -95,7 +96,7 @@ export default function CsvTab({
       <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <p>
-          <span className="font-semibold">Accepts .csv files only.</span> Each row represents a
+          <span className="font-semibold">Accepts .csv and .tsv files.</span> Each row represents a
           patient sample, and columns must represent gene expression values matching the exact
           training dimension
           {formatGeneCount(model?.expected_genes)
@@ -111,7 +112,7 @@ export default function CsvTab({
           disabled={disabled || loading}
           className="inline-flex items-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? 'Processing CSV…' : 'Run batch prediction'}
+          {loading ? 'Processing CSV / TSV…' : 'Run batch prediction'}
         </button>
       </div>
     </form>
