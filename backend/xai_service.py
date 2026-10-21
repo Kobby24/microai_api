@@ -34,7 +34,7 @@ class XAIService:
         self.max_evals = _positive_setting("MICROAI_XAI_MAX_EVALS", 1000)
         self.max_background_bytes = _positive_setting("MICROAI_XAI_MAX_BACKGROUND_BYTES", 64 * 1024 * 1024)
         self.max_background_rows = _positive_setting("MICROAI_XAI_MAX_BACKGROUND_ROWS", 1000)
-        self.max_background_cells = _positive_setting("MICROAI_XAI_MAX_BACKGROUND_CELLS", 1_500_000)
+        self.max_background_cells = _positive_setting("MICROAI_XAI_MAX_BACKGROUND_CELLS", 2_500_000)
         self.additivity_tolerance = 0.01
         self._cache = {}
         self._cache_lock = RLock()
@@ -61,15 +61,22 @@ class XAIService:
 
     def _load_background(self, path, expected_feature_ids):
         try:
-            frame = pd.read_csv(path, index_col=0)
+            frame = pd.read_csv(path)
             source_ids = [str(value).strip() for value in frame.columns]
-            if (
-                len(source_ids) != len(expected_feature_ids)
-                or any(not value for value in source_ids)
-                or len(set(source_ids)) != len(source_ids)
-                or set(source_ids) != set(expected_feature_ids)
+            sample_id_headers = {"sample_id", "sampleid", "sample", "patient_id", "patient", "unnamed: 0"}
+            if source_ids == list(expected_feature_ids):
+                pass
+            elif (
+                len(source_ids) == len(expected_feature_ids) + 1
+                and source_ids[0].lower() in sample_id_headers
+                and source_ids[1:] == list(expected_feature_ids)
             ):
+                frame = frame.iloc[:, 1:]
+                source_ids = source_ids[1:]
+            else:
                 raise ValueError("feature identifiers do not match")
+            if any(not value for value in source_ids) or len(set(source_ids)) != len(source_ids):
+                raise ValueError("feature identifiers are empty or duplicated")
             if len(frame) < 2:
                 raise ValueError("background dataset must contain at least two samples")
             if len(frame) > self.max_background_rows:

@@ -78,7 +78,7 @@ class FakeShap:
         return FakeExplainer(predict, masker, feature_names, algorithm, seed)
 
 
-def _background_file(tmp_path, columns=None):
+def _background_file(tmp_path, columns=None, include_sample_id=False):
     columns = columns or FEATURE_IDS
     values = {
         "probe1": [0.0, 2.0],
@@ -89,13 +89,15 @@ def _background_file(tmp_path, columns=None):
         {feature_id: values.get(feature_id, [1.0, 2.0]) for feature_id in columns},
         index=["reference-a", "reference-b"],
     )
+    if include_sample_id:
+        frame.index.name = "sample_id"
     path = tmp_path / "approved-background.csv"
-    frame.to_csv(path)
+    frame.to_csv(path, index=include_sample_id)
     return path
 
 
 def test_local_explanation_uses_calibrated_output_and_preserves_feature_ids(tmp_path):
-    path = _background_file(tmp_path, columns=["probe3", "probe1", "probe2"])
+    path = _background_file(tmp_path)
     service = XAIService(background_paths={"gse7390": path}, shap_module=FakeShap)
     model = ExplainableFakeModel()
     expression = np.array([[2.0, 8.0, 5.0]])
@@ -150,6 +152,37 @@ def test_local_explanation_refuses_background_with_different_feature_ids(tmp_pat
             target_index=1,
             expected_probability=0.7,
         )
+
+
+def test_local_explanation_refuses_reordered_background_columns(tmp_path):
+    path = _background_file(tmp_path, columns=["probe2", "probe1", "probe3"])
+    service = XAIService(background_paths={"gse7390": path}, shap_module=FakeShap)
+
+    with pytest.raises(XAIServiceError, match="does not match the model feature schema"):
+        service.explain_local(
+            "gse7390",
+            ExplainableFakeModel(),
+            np.array([[2.0, 8.0, 5.0]]),
+            FEATURE_IDS,
+            target_index=1,
+            expected_probability=0.7,
+        )
+
+
+def test_local_explanation_accepts_explicit_sample_id_column(tmp_path):
+    path = _background_file(tmp_path, include_sample_id=True)
+    service = XAIService(background_paths={"gse7390": path}, shap_module=FakeShap)
+
+    result = service.explain_local(
+        "gse7390",
+        ExplainableFakeModel(),
+        np.array([[2.0, 8.0, 5.0]]),
+        FEATURE_IDS,
+        target_index=1,
+        expected_probability=0.7,
+    )
+
+    assert result["metadata"]["background_samples"] == 2
 
 
 def test_local_explanation_refuses_missing_background(tmp_path):
