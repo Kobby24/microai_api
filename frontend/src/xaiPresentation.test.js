@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { contributionDirection, contributionWidth, selectContributors } from './xaiPresentation.js'
+import {
+  contributionDirection,
+  contributionWidth,
+  isExplanationForPrediction,
+  selectContributors,
+} from './xaiPresentation.js'
 
 describe('SHAP contribution presentation', () => {
   it('selects the strongest positive and negative contributors separately', () => {
@@ -33,9 +38,58 @@ describe('SHAP contribution presentation', () => {
 
   it('ignores malformed features and returns empty groups for an empty response', () => {
     assert.deepEqual(selectContributors([{ feature_id: 'bad', shap_value: 'nan' }]), {
+      all: [],
       positive: [],
       negative: [],
       maxAbs: 0,
     })
+  })
+
+  it('orders the expanded feature list by absolute contribution', () => {
+    const selected = selectContributors([
+      { feature_id: 'small', shap_value: 0.01 },
+      { feature_id: 'large-negative', shap_value: -0.2 },
+      { feature_id: 'large-positive', shap_value: 0.15 },
+    ])
+
+    assert.deepEqual(
+      selected.all.map((feature) => feature.feature_id),
+      ['large-negative', 'large-positive', 'small'],
+    )
+  })
+
+  it('rejects malformed explanations and model/prediction mismatches', () => {
+    const model = { name: 'gse7390', feature_ids: ['g1'] }
+    const prediction = { prediction: '1', class_probabilities: { '1': 0.8 } }
+    const explanation = {
+      model_name: 'gse7390',
+      prediction: '1',
+      explained_class_label: 'Class 1',
+      explained_class: '1',
+      class_probabilities: { '1': 0.8 },
+      output: 'calibrated_class_probability',
+      base_value: 0.5,
+      predicted_output: 0.8,
+      features: [{ feature_id: 'g1', raw_input_value: 1, model_input_value: 0.2, shap_value: 0.3 }],
+      metadata: {
+        method: 'shap_permutation',
+        background_samples: 50,
+        max_evals: 1000,
+        additivity_residual: 0,
+        additivity_tolerance: 0.01,
+        preprocessing_scope_note: 'selected feature space',
+      },
+    }
+
+    assert.equal(isExplanationForPrediction(explanation, model, prediction), true)
+    assert.equal(isExplanationForPrediction({ ...explanation, model_name: 'gse2034' }, model, prediction), false)
+    assert.equal(
+      isExplanationForPrediction({ ...explanation, predicted_output: 0.7 }, model, prediction),
+      false,
+    )
+    assert.equal(
+      isExplanationForPrediction({ ...explanation, features: [{ ...explanation.features[0], feature_id: 'unknown' }] }, model, prediction),
+      false,
+    )
   })
 })

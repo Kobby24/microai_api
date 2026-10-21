@@ -58,12 +58,12 @@ export async function predictJson(modelName, expression, featureIds) {
   return data
 }
 
-export async function explainJson(modelName, expression, featureIds, targetClass) {
+export async function explainJson(modelName, expression, featureIds, targetClass, signal) {
   const { data } = await client.post(`/explain/${encodeURIComponent(modelName)}`, {
     expression,
     feature_ids: featureIds,
     ...(targetClass ? { target_class: targetClass } : {}),
-  })
+  }, { signal })
   return data
 }
 

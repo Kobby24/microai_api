@@ -7,9 +7,16 @@ function formatValue(value) {
 
 function ContributionRow({ feature, explainedClassLabel, maxAbs }) {
   const value = Number(feature.shap_value)
-  const width = `${contributionWidth(value, maxAbs)}%`
+  const magnitude = contributionWidth(value, maxAbs)
+  const width = value === 0 ? '0%' : `max(2px, ${magnitude}%)`
   const positive = value > 0
+  const negative = value < 0
   const direction = contributionDirection(value, explainedClassLabel)
+  const contributionClass = positive
+    ? 'font-medium text-blue-800'
+    : negative
+      ? 'font-medium text-rose-800'
+      : 'font-medium text-slate-600'
 
   return (
     <li className="grid gap-2 border-b border-slate-100 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,1.5fr)_minmax(9rem,1fr)] sm:items-center sm:gap-4">
@@ -28,7 +35,7 @@ function ContributionRow({ feature, explainedClassLabel, maxAbs }) {
         aria-label={`${direction}, SHAP contribution ${value > 0 ? '+' : ''}${formatValue(value)}`}
       >
         <div className="flex justify-end border-r border-slate-400">
-          {!positive && (
+          {negative && (
             <div className="h-3 self-center rounded-l-sm bg-rose-600" style={{ width }} />
           )}
         </div>
@@ -40,7 +47,7 @@ function ContributionRow({ feature, explainedClassLabel, maxAbs }) {
       </div>
 
       <div className="flex items-center justify-between gap-3 text-xs sm:block sm:text-right">
-        <span className={positive ? 'font-medium text-blue-800' : 'font-medium text-rose-800'}>
+        <span className={contributionClass}>
           {direction}
         </span>
         <span className="font-mono tabular-nums text-slate-700">
@@ -74,7 +81,7 @@ function ContributionGroup({ title, features, explainedClassLabel, maxAbs, empty
 }
 
 export default function ExplanationPanel({ explanation }) {
-  const { positive, negative, maxAbs } = selectContributors(explanation.features)
+  const { all, positive, negative, maxAbs } = selectContributors(explanation.features)
   const { metadata } = explanation
   const residual = Number(metadata.additivity_residual)
   const tolerance = Number(metadata.additivity_tolerance)
@@ -84,16 +91,28 @@ export default function ExplanationPanel({ explanation }) {
     <section className="mt-6 border-t border-slate-200 pt-5" aria-labelledby="explanation-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="explanation-heading" className="text-base font-semibold text-slate-900">
-          Explanation for {explanation.explained_class_label}
+          Why did the model make this prediction?
         </h3>
         <p className="text-xs text-slate-500">
           {explanation.model_name.toUpperCase()} · {metadata.method.replaceAll('_', ' ')}
         </p>
       </div>
 
-      <p className="mt-3 text-sm leading-relaxed text-slate-600">
-        SHAP values show how selected model-space features contributed to this class probability relative to the reference background. Positive contributions move toward the explained class; negative contributions move away. This is not a complete attribution across all original genes.
+      <p className="mt-2 text-sm font-medium text-slate-700">
+        Explanation for {explanation.explained_class_label}
       </p>
+      <p className="mt-2 text-xs text-slate-500">
+        {metadata.background_samples} reference samples · {explanation.features.length} selected model-space features
+      </p>
+      <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        Each contribution shows how a selected feature moved the model output toward or away from the explained class relative to the reference background. This describes model behavior, not whether a feature is biologically good or bad. It is not a complete attribution across all 22,283 input probes.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600" role="group" aria-label="Contribution chart legend">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm bg-rose-600" />Negative: away from class</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 border-l-2 border-slate-500" />Zero contribution</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm bg-blue-700" />Positive: toward class</span>
+      </div>
 
       <div className="mt-4 grid gap-x-8 gap-y-2 border-y border-slate-200 py-3 text-sm sm:grid-cols-3">
         <p><span className="text-slate-500">Base value</span> <span className="ml-2 font-mono tabular-nums text-slate-900">{formatValue(explanation.base_value)}</span></p>
@@ -123,10 +142,10 @@ export default function ExplanationPanel({ explanation }) {
 
       <details className="mt-4 border-t border-slate-200 pt-3">
         <summary className="cursor-pointer text-sm font-medium text-slate-700">
-          View all {explanation.features.length} selected features
+          View all {all.length} selected features
         </summary>
         <ul className="mt-2 max-h-96 overflow-y-auto">
-          {explanation.features.map((feature) => (
+          {all.map((feature) => (
             <ContributionRow
               key={feature.feature_id}
               feature={feature}

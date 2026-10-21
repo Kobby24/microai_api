@@ -85,6 +85,32 @@ describe('SHAP explanation UI', () => {
     assert.doesNotMatch(markup, /View all .* selected features/)
   })
 
+  it('renders a GSE2034 explanation with its own model and class labels', () => {
+    const gse2034Model = {
+      ...model,
+      name: 'gse2034',
+      display_name: 'GSE2034',
+      predicts: 'relapse',
+      predicts_label: 'Disease relapse',
+      label_meanings: { '0': 'No relapse (False)', '1': 'Relapse (True)' },
+    }
+    const gse2034Explanation = {
+      ...explanation,
+      model_name: 'gse2034',
+      explained_class_label: 'Relapse (True)',
+    }
+    const markup = renderResults({ model: gse2034Model, explanation: gse2034Explanation })
+
+    assert.match(markup, /GSE2034/)
+    assert.match(markup, /Relapse \(True\)/)
+    assert.doesNotMatch(markup, /GSE7390/)
+  })
+
+  it('does not show an Explain action without a valid single prediction', () => {
+    const markup = renderResults({ jsonResult: null })
+    assert.doesNotMatch(markup, /Explain prediction/)
+  })
+
   it('shows an accessible loading state without removing the prediction', () => {
     const markup = renderResults({ explaining: true })
     assert.match(markup, /Explaining prediction/)

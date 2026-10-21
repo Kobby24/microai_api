@@ -8,7 +8,8 @@ import JsonTab from './components/JsonTab'
 import CsvTab from './components/CsvTab'
 import Results from './components/Results'
 import { parseExpressionInput } from './expressionInput'
-import { explanationReducer, initialExplanationState } from './explanationState'
+import { canStartExplanation, explanationReducer, initialExplanationState } from './explanationState'
+import { isExplanationForPrediction } from './xaiPresentation'
 
 export default function App() {
   const [models, setModels] = useState([])
@@ -29,6 +30,7 @@ export default function App() {
     initialExplanationState,
   )
   const explanationRequestId = useRef(0)
+  const explanationAbortController = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -84,6 +86,8 @@ export default function App() {
 
   function resetExplanation() {
     explanationRequestId.current += 1
+    explanationAbortController.current?.abort()
+    explanationAbortController.current = null
     dispatchExplanation({ type: 'reset' })
   }
 
@@ -141,40 +145,68 @@ export default function App() {
   function handleCsvFileChange(file, fileError) {
     setCsvFile(file)
     setError(fileError || '')
+    setJsonResult(null)
+    setCsvResult(null)
+    setJsonRequest(null)
+    resetExplanation()
+    setJsonResult(null)
+    setCsvResult(null)
+    setJsonRequest(null)
+    resetExplanation()
   }
 
   function handleJsonInputChange(value) {
     setJsonInput(value)
     setJsonResult(null)
+    setCsvResult(null)
     setJsonRequest(null)
     resetExplanation()
   }
 
   async function handleExplain() {
-    if (!jsonRequest || !jsonResult || !selectedMeta?.ready || explanationState.status === 'loading') return
+    if (!canStartExplanation({
+      hasRequest: Boolean(jsonRequest),
+      hasPrediction: Boolean(jsonResult),
+      modelReady: Boolean(selectedMeta?.ready),
+      status: explanationState.status,
+      inFlight: Boolean(explanationAbortController.current),
+    })) return
 
     const requestId = explanationRequestId.current + 1
     explanationRequestId.current = requestId
-    dispatchExplanation({ type: 'start' })
+    const abortController = new AbortController()
+    explanationAbortController.current = abortController
+    dispatchExplanation({ type: 'start', requestId })
     try {
       const result = await explainJson(
         selectedModel,
         jsonRequest.expression,
         jsonRequest.featureIds,
+        undefined,
+        abortController.signal,
       )
+      if (!isExplanationForPrediction(result, selectedMeta, jsonResult)) {
+        throw new Error('The explanation response did not match the current prediction.')
+      }
       if (requestId !== explanationRequestId.current) return
-      dispatchExplanation({ type: 'success', result })
+      dispatchExplanation({ type: 'success', requestId, result })
     } catch (err) {
-      if (requestId !== explanationRequestId.current) return
+      if (requestId !== explanationRequestId.current || abortController.signal.aborted) return
       dispatchExplanation({
         type: 'failure',
+        requestId,
         error: err.response || err.request ? extractApiError(err) : err.message,
       })
+    } finally {
+      if (explanationAbortController.current === abortController) {
+        explanationAbortController.current = null
+      }
     }
   }
 
   function handleModelChange(name) {
     setSelectedModel(name)
+    setCsvFile(null)
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
