@@ -1,7 +1,9 @@
+import csv
 import joblib
 import logging
 import numpy as np
 import os
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -66,6 +68,11 @@ MODELS = {
     "gse2034": joblib.load("./models/GSE2034_model.joblib") 
 }
 XAI_SERVICE = XAIService()
+
+VERIFIED_TRAINING_IMPUTATION_APPLIED = {
+    "gse7390": False,
+    "gse2034": False,
+}
 
 MODEL_CATALOG = {
     "gse7390": {
@@ -143,6 +150,40 @@ def _feature_ids(model) -> Optional[List[str]]:
         if indices.ndim != 1 or np.any(indices < 0) or np.any(indices >= len(feature_ids)):
             return None
     return feature_ids
+
+
+def _attach_verified_model_metadata() -> None:
+    schema_root = Path(__file__).resolve().parent / "xai" / "schemas"
+    for name, model in MODELS.items():
+        expected = _expected_genes(model)
+        if expected is None:
+            continue
+        schema_path = schema_root / f"{name.upper()}_probe_ids.csv"
+        if not schema_path.is_file():
+            continue
+        try:
+            with schema_path.open(newline="", encoding="utf-8-sig") as stream:
+                rows = list(csv.reader(stream))
+            if not rows or rows[0] != ["probe_id"] or any(len(row) != 1 for row in rows[1:]):
+                continue
+            feature_ids = [row[0].strip() for row in rows[1:]]
+        except OSError:
+            continue
+        if (
+            len(feature_ids) != expected
+            or any(not feature_id for feature_id in feature_ids)
+            or len(set(feature_ids)) != len(feature_ids)
+        ):
+            continue
+        stored_ids = getattr(model, "gene_names", None)
+        if stored_ids is not None and list(stored_ids) != feature_ids:
+            continue
+        model.gene_names = feature_ids
+        training_info = getattr(model, "training_info", None)
+        if isinstance(training_info, dict) and "training_imputation_applied" not in training_info:
+            attested_value = VERIFIED_TRAINING_IMPUTATION_APPLIED.get(name)
+            if attested_value is not None:
+                training_info["training_imputation_applied"] = attested_value
 
 
 def _model_readiness_issue(name: str, model) -> Optional[str]:
@@ -238,6 +279,9 @@ def _require_model_ready(name: str, model) -> None:
     issue = _model_readiness_issue(name, model)
     if issue is not None:
         raise HTTPException(status_code=503, detail=issue)
+
+
+_attach_verified_model_metadata()
 
 
 def _ordered_expression(model, expression, supplied_feature_ids) -> np.ndarray:

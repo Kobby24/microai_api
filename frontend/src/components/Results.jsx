@@ -1,5 +1,6 @@
-import { CheckCircle2, Table2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, LoaderCircle, Sparkles, Table2 } from 'lucide-react'
 import { interpretClass, interpretPrediction, summarizeBatch } from '../interpret'
+import ExplanationPanel from './ExplanationPanel'
 
 function formatPercent(value) {
   const numeric = Number(value)
@@ -25,7 +26,7 @@ function ProbabilityBar({ value }) {
   )
 }
 
-function JsonResults({ result, model }) {
+function JsonResults({ result, model, onExplain, explaining, explanation, explanationError }) {
   const interpretation = interpretPrediction(result.prediction, model)
   const entries = Object.entries(result.class_probabilities || {})
 
@@ -91,6 +92,46 @@ function JsonResults({ result, model }) {
       <p className="text-xs text-slate-400">
         Research estimate only. Not a clinical diagnosis or treatment recommendation.
       </p>
+
+      <div className="border-t border-slate-200 pt-4">
+        {!explanation && !explanationError && (
+          <button
+            type="button"
+            onClick={onExplain}
+            disabled={explaining || !model?.ready}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {explaining ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {explaining ? 'Explaining prediction…' : 'Explain prediction'}
+          </button>
+        )}
+
+        {explaining && (
+          <p className="mt-2 text-sm text-slate-600" role="status" aria-live="polite">
+            Calculating a local explanation for this sample.
+          </p>
+        )}
+
+        {explanationError && (
+          <div className="flex items-start gap-2 text-sm text-red-800" role="alert">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-medium">Explanation unavailable</p>
+              <p>{explanationError}</p>
+              <button
+                type="button"
+                onClick={onExplain}
+                disabled={explaining || !model?.ready}
+                className="mt-2 font-medium underline underline-offset-2 disabled:opacity-60"
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        )}
+
+        {explanation && <ExplanationPanel explanation={explanation} />}
+      </div>
     </div>
   )
 }
@@ -161,7 +202,15 @@ function CsvResults({ result, model }) {
   )
 }
 
-export default function Results({ jsonResult, csvResult, model }) {
+export default function Results({
+  jsonResult,
+  csvResult,
+  model,
+  onExplain,
+  explaining = false,
+  explanation,
+  explanationError,
+}) {
   const hasJson = Boolean(jsonResult)
   const hasCsv = Boolean(csvResult)
 
@@ -178,7 +227,16 @@ export default function Results({ jsonResult, csvResult, model }) {
         </p>
       )}
 
-      {hasJson && <JsonResults result={jsonResult} model={model} />}
+      {hasJson && (
+        <JsonResults
+          result={jsonResult}
+          model={model}
+          onExplain={onExplain}
+          explaining={explaining}
+          explanation={explanation}
+          explanationError={explanationError}
+        />
+      )}
       {hasCsv && <CsvResults result={csvResult} model={model} />}
     </section>
   )

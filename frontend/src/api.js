@@ -58,6 +58,15 @@ export async function predictJson(modelName, expression, featureIds) {
   return data
 }
 
+export async function explainJson(modelName, expression, featureIds, targetClass) {
+  const { data } = await client.post(`/explain/${encodeURIComponent(modelName)}`, {
+    expression,
+    feature_ids: featureIds,
+    ...(targetClass ? { target_class: targetClass } : {}),
+  })
+  return data
+}
+
 export async function predictCsv(modelName, file) {
   const form = new FormData()
   form.append('file', file)

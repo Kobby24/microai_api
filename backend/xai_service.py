@@ -7,6 +7,8 @@ from threading import RLock
 import numpy as np
 import pandas as pd
 
+_SHAP_RANDOM_LOCK = RLock()
+
 
 class XAIServiceError(Exception):
     def __init__(self, status_code: int, detail: str):
@@ -44,8 +46,8 @@ class XAIService:
         if configured is None:
             env_name = f"MICROAI_XAI_{model_name.upper()}_BACKGROUND"
             configured = os.getenv(env_name)
-        if configured is None and model_name == "gse7390":
-            configured = "/content/GSE7390_demo_x_real.csv"
+        if configured is None and model_name in {"gse7390", "gse2034"}:
+            configured = Path(__file__).resolve().parent / "xai" / "backgrounds" / f"{model_name.upper()}_background.csv"
         if not configured:
             raise XAIServiceError(503, "No approved SHAP background dataset is configured for this model.")
         path = Path(configured)
@@ -126,7 +128,7 @@ class XAIService:
         with self._cache_lock:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                return cached[0], selected_ids, cached[1]
+                return cached[0], selected_ids, cached[1], cached[2]
 
         background_raw = self._load_background(path, feature_ids)
         background_model_space = self._model_space(model, background_raw)
@@ -150,18 +152,25 @@ class XAIService:
             return probabilities[:, int(target_index)]
 
         masker = shap.maskers.Independent(masker_data, max_samples=len(masker_data))
-        explainer = shap.Explainer(
-            calibrated_probability,
-            masker,
-            algorithm="permutation",
-            feature_names=selected_ids,
-            seed=0,
-        )
+        with _SHAP_RANDOM_LOCK:
+            random_state = np.random.get_state()
+            try:
+                np.random.seed(0)
+                explainer = shap.Explainer(
+                    calibrated_probability,
+                    masker,
+                    algorithm="permutation",
+                    feature_names=selected_ids,
+                    seed=0,
+                )
+                explainer_random_state = np.random.get_state()
+            finally:
+                np.random.set_state(random_state)
         with self._cache_lock:
             if len(self._cache) >= 2:
                 self._cache.pop(next(iter(self._cache)))
-            self._cache[cache_key] = (explainer, len(masker_data))
-        return explainer, selected_ids, len(masker_data)
+            self._cache[cache_key] = (explainer, len(masker_data), explainer_random_state)
+        return explainer, selected_ids, len(masker_data), explainer_random_state
 
     def explain_local(
         self,
@@ -194,7 +203,7 @@ class XAIService:
         if not np.isclose(predicted_output, expected_probability, atol=1e-8, rtol=1e-8):
             raise XAIServiceError(500, "The explanation output does not match the prediction response.")
 
-        explainer, selected_ids, background_count = self._get_explainer(
+        explainer, selected_ids, background_count, explainer_random_state = self._get_explainer(
             model_name,
             model,
             expected_feature_ids,
@@ -203,7 +212,13 @@ class XAIService:
             stat,
         )
         try:
-            explanation = explainer(model_space, max_evals=minimum_evals, silent=True)
+            with _SHAP_RANDOM_LOCK:
+                random_state = np.random.get_state()
+                try:
+                    np.random.set_state(explainer_random_state)
+                    explanation = explainer(model_space, max_evals=minimum_evals, silent=True)
+                finally:
+                    np.random.set_state(random_state)
         except Exception as exc:
             raise XAIServiceError(500, "SHAP could not calculate this local explanation.") from exc
 

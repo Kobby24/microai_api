@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Braces, FileSpreadsheet } from 'lucide-react'
-import { extractApiError, fetchHealth, fetchModels, predictCsv, predictJson } from './api'
+import { explainJson, extractApiError, fetchHealth, fetchModels, predictCsv, predictJson } from './api'
 import Header from './components/Header'
 import ModelSelector from './components/ModelSelector'
 import ErrorBanner from './components/ErrorBanner'
@@ -8,6 +8,7 @@ import JsonTab from './components/JsonTab'
 import CsvTab from './components/CsvTab'
 import Results from './components/Results'
 import { parseExpressionInput } from './expressionInput'
+import { explanationReducer, initialExplanationState } from './explanationState'
 
 export default function App() {
   const [models, setModels] = useState([])
@@ -22,6 +23,12 @@ export default function App() {
   const [error, setError] = useState('')
   const [jsonResult, setJsonResult] = useState(null)
   const [csvResult, setCsvResult] = useState(null)
+  const [jsonRequest, setJsonRequest] = useState(null)
+  const [explanationState, dispatchExplanation] = useReducer(
+    explanationReducer,
+    initialExplanationState,
+  )
+  const explanationRequestId = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -75,11 +82,18 @@ export default function App() {
     }
   }
 
+  function resetExplanation() {
+    explanationRequestId.current += 1
+    dispatchExplanation({ type: 'reset' })
+  }
+
   async function handleJsonSubmit(event) {
     event.preventDefault()
     setError('')
     setJsonResult(null)
     setCsvResult(null)
+    setJsonRequest(null)
+    resetExplanation()
 
     try {
       requireModel()
@@ -90,6 +104,7 @@ export default function App() {
       setLoading(true)
       const result = await predictJson(selectedModel, input.expression, input.featureIds)
       setJsonResult(result)
+      setJsonRequest(input)
     } catch (err) {
       setError(err.response || err.request ? extractApiError(err) : err.message)
     } finally {
@@ -102,6 +117,8 @@ export default function App() {
     setError('')
     setJsonResult(null)
     setCsvResult(null)
+    setJsonRequest(null)
+    resetExplanation()
 
     try {
       requireModel()
@@ -126,10 +143,42 @@ export default function App() {
     setError(fileError || '')
   }
 
+  function handleJsonInputChange(value) {
+    setJsonInput(value)
+    setJsonResult(null)
+    setJsonRequest(null)
+    resetExplanation()
+  }
+
+  async function handleExplain() {
+    if (!jsonRequest || !jsonResult || !selectedMeta?.ready || explanationState.status === 'loading') return
+
+    const requestId = explanationRequestId.current + 1
+    explanationRequestId.current = requestId
+    dispatchExplanation({ type: 'start' })
+    try {
+      const result = await explainJson(
+        selectedModel,
+        jsonRequest.expression,
+        jsonRequest.featureIds,
+      )
+      if (requestId !== explanationRequestId.current) return
+      dispatchExplanation({ type: 'success', result })
+    } catch (err) {
+      if (requestId !== explanationRequestId.current) return
+      dispatchExplanation({
+        type: 'failure',
+        error: err.response || err.request ? extractApiError(err) : err.message,
+      })
+    }
+  }
+
   function handleModelChange(name) {
     setSelectedModel(name)
     setJsonResult(null)
     setCsvResult(null)
+    setJsonRequest(null)
+    resetExplanation()
     setError('')
   }
 
@@ -178,7 +227,7 @@ export default function App() {
           {activeTab === 'json' ? (
             <JsonTab
               value={jsonInput}
-              onChange={setJsonInput}
+              onChange={handleJsonInputChange}
               onSubmit={handleJsonSubmit}
               loading={loading}
               disabled={loading || !selectedMeta?.ready}
@@ -199,7 +248,15 @@ export default function App() {
         </section>
 
         <ErrorBanner message={error} />
-        <Results jsonResult={jsonResult} csvResult={csvResult} model={selectedMeta} />
+        <Results
+          jsonResult={jsonResult}
+          csvResult={csvResult}
+          model={selectedMeta}
+          onExplain={handleExplain}
+          explaining={explanationState.status === 'loading'}
+          explanation={explanationState.result}
+          explanationError={explanationState.error}
+        />
       </main>
     </div>
   )
