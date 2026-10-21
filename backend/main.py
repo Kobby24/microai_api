@@ -24,6 +24,7 @@ from tabular import (
     read_expression_table,
     table_kind,
 )
+from xai_service import XAIService, XAIServiceError
 
 app = FastAPI(title="MICRO-AI Prediction API")
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ MODELS = {
     "gse7390": joblib.load("./models/GSE7390_model.joblib"),
     "gse2034": joblib.load("./models/GSE2034_model.joblib") 
 }
+XAI_SERVICE = XAIService()
 
 MODEL_CATALOG = {
     "gse7390": {
@@ -437,6 +439,42 @@ class PredictionResponse(BaseModel):
     probability: float
     class_probabilities: Dict[str, float]
 
+
+class ExplanationRequest(PredictionRequest):
+    target_class: Optional[str] = Field(default=None, min_length=1)
+
+
+class ExplanationFeature(BaseModel):
+    feature_id: str
+    raw_input_value: float
+    model_input_value: float
+    shap_value: float
+
+
+class ExplanationMetadata(BaseModel):
+    method: str
+    explained_feature_space: str
+    background_samples: int
+    max_evals: int
+    additivity_residual: float
+    additivity_tolerance: float
+    additivity_verified: bool
+    preprocessing_scope_note: str
+
+
+class ExplanationResponse(BaseModel):
+    model_name: str
+    prediction: str
+    prediction_label: str
+    explained_class: str
+    explained_class_label: str
+    class_probabilities: Dict[str, float]
+    output: str
+    base_value: float
+    predicted_output: float
+    features: List[ExplanationFeature]
+    metadata: ExplanationMetadata
+
 @app.post("/predict/{model_name}", response_model=PredictionResponse)
 def predict_json(model_name: str, request: PredictionRequest):
     model_name = model_name.lower()
@@ -456,6 +494,52 @@ def predict_json(model_name: str, request: PredictionRequest):
         prediction=_normalize_class_label(predictions[0]),
         probability=float(np.max(proba)),
         class_probabilities={key: float(value) for key, value in zip(class_keys, proba)},
+    )
+
+
+@app.post("/explain/{model_name}", response_model=ExplanationResponse)
+def explain_json(model_name: str, request: ExplanationRequest):
+    model_name = model_name.lower()
+    if model_name not in MODELS:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    model = MODELS[model_name]
+    _require_model_ready(model_name, model)
+    X = _ordered_expression(model, request.expression, request.feature_ids)
+    try:
+        predictions, probabilities, class_keys = _checked_predictions(model, X)
+    except Exception as exc:
+        logger.exception("Model prediction failed for explanation request %s", model_name)
+        raise HTTPException(status_code=500, detail="Prediction failed.") from exc
+
+    predicted_class = _normalize_class_label(predictions[0])
+    explained_class = request.target_class or predicted_class
+    if explained_class not in class_keys:
+        raise HTTPException(status_code=400, detail="The requested explanation class is not supported by this model.")
+    target_index = class_keys.index(explained_class)
+    try:
+        result = XAI_SERVICE.explain_local(
+            model_name=model_name,
+            model=model,
+            expression=X,
+            feature_ids=_feature_ids(model),
+            target_index=target_index,
+            expected_probability=float(probabilities[0, target_index]),
+        )
+    except XAIServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except Exception as exc:
+        logger.exception("Explanation failed for %s", model_name)
+        raise HTTPException(status_code=500, detail="Explanation failed.") from exc
+
+    return ExplanationResponse(
+        model_name=model_name,
+        prediction=predicted_class,
+        prediction_label=_label_meanings(model_name, [predicted_class]).get(predicted_class, predicted_class),
+        explained_class=explained_class,
+        explained_class_label=_label_meanings(model_name, [explained_class]).get(explained_class, explained_class),
+        class_probabilities={key: float(value) for key, value in zip(class_keys, probabilities[0])},
+        **result,
     )
 
 

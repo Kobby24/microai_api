@@ -94,9 +94,16 @@ def test_id_ref_header_is_accepted_for_gene_rows():
     assert sample_ids is None
 
 
-@pytest.mark.parametrize("bad_id", ["unknown", "", "g1"])
-def test_gene_rows_reject_unknown_missing_or_duplicate_ids(bad_id):
-    df = pd.DataFrame([[bad_id, 1], ["g2", 2], ["g3", 3]])
+@pytest.mark.parametrize(
+    "identifiers",
+    [
+        ["unknown", "g2", "g3"],
+        ["", "g2", "g3"],
+        ["g1", "g1", "g3"],
+    ],
+)
+def test_gene_rows_reject_unknown_missing_or_duplicate_ids(identifiers):
+    df = pd.DataFrame([[feature_id, index + 1] for index, feature_id in enumerate(identifiers)])
     with pytest.raises(ValueError, match="Feature identifiers do not match"):
         prepare(df)
 

@@ -180,7 +180,7 @@ def test_schema_is_required_before_prediction(client, fake_model):
     response = _predict_json(client, SAMPLES[0])
 
     assert response.status_code == 503
-    assert "no verified gene/probe schema" in response.json()["detail"]
+    assert "no verified ordered gene/probe schema" in response.json()["detail"]
 
 
 def test_prediction_is_blocked_when_training_preprocessing_contract_is_unknown(client, fake_model):
@@ -199,6 +199,38 @@ def test_model_readiness_rejects_unmapped_target_classes(client, fake_model):
     assert response.status_code == 200
     assert response.json()["ready"] is False
     assert "not mapped to the catalogued target" in response.json()["readiness_reason"]
+
+
+def test_explanation_requires_same_ready_model_schema(client, fake_model):
+    fake_model.gene_names = None
+    response = client.post(
+        "/explain/gse7390",
+        json={"expression": SAMPLES[0], "feature_ids": FEATURE_IDS},
+    )
+
+    assert response.status_code == 503
+    assert "no verified ordered gene/probe schema" in response.json()["detail"]
+
+
+def test_explanation_rejects_unknown_target_class_before_loading_background(client):
+    response = client.post(
+        "/explain/gse7390",
+        json={"expression": SAMPLES[0], "feature_ids": FEATURE_IDS, "target_class": "2"},
+    )
+
+    assert response.status_code == 400
+    assert "requested explanation class is not supported" in response.json()["detail"]
+
+
+def test_explanation_reports_missing_reference_dataset(client, monkeypatch, tmp_path):
+    monkeypatch.setitem(main.XAI_SERVICE.background_paths, "gse7390", tmp_path / "missing.csv")
+    response = client.post(
+        "/explain/gse7390",
+        json={"expression": SAMPLES[0], "feature_ids": FEATURE_IDS},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "The configured SHAP background dataset is unavailable."
 
 
 def test_batch_size_and_row_limits(client, monkeypatch):
