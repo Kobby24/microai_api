@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-export const API_BASE = 'https://microai-api.onrender.com'
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://microai-api.onrender.com'
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -50,9 +50,10 @@ export async function fetchModels() {
   return Array.isArray(data?.models) ? data.models : []
 }
 
-export async function predictJson(modelName, expression) {
+export async function predictJson(modelName, expression, featureIds) {
   const { data } = await client.post(`/predict/${encodeURIComponent(modelName)}`, {
     expression,
+    feature_ids: featureIds,
   })
   return data
 }

@@ -103,10 +103,16 @@ class MICROAI:
         Returns:
             Preprocessed expression matrix
         """
-        X = np.array(X, dtype=float)
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2:
+            raise ValueError("Expression data must be a two-dimensional matrix.")
+        if np.isinf(X).any():
+            raise ValueError("Infinite expression values are not supported.")
 
         # Step 1: KNN Imputation (if missing values)
         if np.any(np.isnan(X)):
+            if not fit:
+                raise ValueError("Missing expression values are not supported at inference.")
             print("Imputing missing values...")
             X = self.knn_imputer.fit_transform(X)
 
@@ -125,6 +131,12 @@ class MICROAI:
                 X = self.combat_corrector.fit_transform(X, batch_labels)
             elif self.combat_corrector is not None:
                 X = self.combat_corrector.transform(X, batch_labels)
+            else:
+                raise ValueError("Batch labels were provided, but this model has no fitted ComBat correction.")
+        elif fit:
+            self.combat_corrector = None
+        elif self.combat_corrector is not None:
+            raise ValueError("Batch labels are required by this model's fitted ComBat correction.")
 
         return X
 
@@ -204,6 +216,7 @@ class MICROAI:
 
         X = np.array(X, dtype=float)
         self.gene_names = gene_names
+        self.training_info["training_imputation_applied"] = bool(np.isnan(X).any())
 
         # Encode labels
         y_encoded = self.label_encoder.fit_transform(y)

@@ -9,6 +9,17 @@ from tabular import (
     table_separator,
 )
 
+FEATURE_IDS = ["g1", "g2", "g3"]
+
+
+def prepare(df):
+    return prepare_expression_matrix(
+        df,
+        expected_genes=3,
+        model_name="gse7390",
+        expected_feature_ids=FEATURE_IDS,
+    )
+
 
 def test_accepts_csv_and_tsv_extensions_case_insensitively():
     assert is_supported_table_filename("patients.csv")
@@ -27,16 +38,12 @@ def test_tsv_uses_tab_delimiter_and_csv_keeps_comma():
     assert table_kind("batch.csv") == "CSV"
 
 
-def test_reads_tsv_without_header_same_shape_as_csv():
-    csv_bytes = b"1.0,2.0\n3.0,4.0\n5.0,6.0\n"
-    tsv_bytes = b"1.0\t2.0\n3.0\t4.0\n5.0\t6.0\n"
+def test_reads_csv_and_tsv_with_feature_headers():
+    csv_df = read_expression_table(b"g1,g2,g3\n1.0,2.0,3.0\n", "samples.csv")
+    tsv_df = read_expression_table(b"g1\tg2\tg3\n1.0\t2.0\t3.0\n", "samples.tsv")
 
-    csv_df = read_expression_table(csv_bytes, "samples.csv")
-    tsv_df = read_expression_table(tsv_bytes, "samples.tsv")
-
-    assert csv_df.shape == (3, 2)
-    assert tsv_df.shape == (3, 2)
     pd.testing.assert_frame_equal(csv_df, tsv_df)
+    assert prepare(csv_df)[0].tolist() == [[1.0, 2.0, 3.0]]
 
 
 def test_empty_tsv_raises_user_friendly_error():
@@ -45,39 +52,68 @@ def test_empty_tsv_raises_user_friendly_error():
 
 
 def test_malformed_tsv_raises_user_friendly_error():
-    malformed = b"1.0\t2.0\n3.0\t4.0\t5.0\n"
+    malformed = b"g1\tg2\tg3\n1.0\t2.0\t3.0\t4.0\n"
     with pytest.raises(ValueError, match="could not be parsed"):
         read_expression_table(malformed, "broken.tsv")
 
 
-def test_prepare_keeps_four_patient_rows_from_being_read_as_four_genes():
+def test_sample_rows_align_reordered_feature_headers_and_keep_ids():
     df = pd.DataFrame([
-        ["sample_id", "g1", "g2", "g3"],
-        ["P001", 1.5, 2.0, 3.0],
-        ["P002", -0.5, 1.0, 4.0],
-        ["P003", 2.0, 1.0, 1.0],
-        ["P004", -1.0, 0.5, 0.2],
+        ["sample_id", "g3", "g1", "g2"],
+        ["P001", 3.0, 1.5, 2.0],
+        ["P002", 4.0, -0.5, 1.0],
     ])
-    X, sample_ids = prepare_expression_matrix(df, expected_genes=3, model_name="gse7390")
+    X, sample_ids = prepare(df)
 
-    assert X.shape == (4, 3)
-    assert sample_ids == ["P001", "P002", "P003", "P004"]
+    assert X.tolist() == [[1.5, 2.0, 3.0], [-0.5, 1.0, 4.0]]
+    assert sample_ids == ["P001", "P002"]
 
 
-def test_prepare_single_patient_uses_original_gene_column():
-    df = pd.DataFrame([[1.5], [2.0], [3.0]])
-    X, sample_ids = prepare_expression_matrix(df, expected_genes=3, model_name="gse7390")
+def test_gene_rows_align_reordered_ids_for_one_or_more_samples():
+    df = pd.DataFrame([
+        ["g3", 3.0, 4.0],
+        ["g1", 1.5, -0.5],
+        ["g2", 2.0, 1.0],
+    ])
+    X, sample_ids = prepare(df)
 
-    assert X.shape == (1, 3)
+    assert X.tolist() == [[1.5, 2.0, 3.0], [-0.5, 1.0, 4.0]]
     assert sample_ids is None
-    assert list(X[0]) == [1.5, 2.0, 3.0]
 
 
-def test_prepare_rejects_multi_patient_gene_columns():
+def test_id_ref_header_is_accepted_for_gene_rows():
     df = pd.DataFrame([
-        [1.5, -0.5],
-        [2.0, 1.0],
-        [3.0, 4.0],
+        ["ID_REF", "sample1"],
+        ["g1", 1.5],
+        ["g2", 2.0],
+        ["g3", 3.0],
     ])
-    with pytest.raises(ValueError, match="one row per patient"):
-        prepare_expression_matrix(df, expected_genes=3, model_name="gse7390")
+    X, sample_ids = prepare(df)
+
+    assert X.tolist() == [[1.5, 2.0, 3.0]]
+    assert sample_ids is None
+
+
+@pytest.mark.parametrize("bad_id", ["unknown", "", "g1"])
+def test_gene_rows_reject_unknown_missing_or_duplicate_ids(bad_id):
+    df = pd.DataFrame([[bad_id, 1], ["g2", 2], ["g3", 3]])
+    with pytest.raises(ValueError, match="Feature identifiers do not match"):
+        prepare(df)
+
+
+@pytest.mark.parametrize("bad_value", [None, "not-a-number", float("nan"), float("inf")])
+def test_rejects_missing_non_numeric_and_infinite_values(bad_value):
+    df = pd.DataFrame([["g1", 1.0, 2.0], ["g2", bad_value, 3.0], ["g3", 4.0, 5.0]])
+    with pytest.raises(ValueError, match="must be numeric and finite"):
+        prepare(df)
+
+
+def test_rejects_positional_data_without_feature_identifiers():
+    df = pd.DataFrame([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    with pytest.raises(ValueError, match="no unambiguous matching feature"):
+        prepare(df)
+
+
+def test_rejects_missing_model_feature_schema():
+    with pytest.raises(ValueError, match="schema is unavailable"):
+        prepare_expression_matrix(pd.DataFrame([[1, 2, 3]]), 3, "gse7390")

@@ -67,7 +67,7 @@ export default function CsvTab({
           Drop a CSV or TSV file here, or click to browse
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          .csv and .tsv · single patient = gene column · multiple patients = one row each
+          .csv and .tsv · feature IDs required · headers or a gene-ID column
         </p>
       </div>
 
@@ -98,15 +98,11 @@ export default function CsvTab({
       <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <p>
-          <span className="font-semibold">Two layouts, both need the same gene count</span>
+          <span className="font-semibold">Feature IDs must match the selected model</span>
           {formatGeneCount(model?.expected_genes)
             ? ` (${formatGeneCount(model.expected_genes)} for ${model.display_name || model.name})`
             : ''}
-          .{' '}
-          <span className="font-medium">Single patient:</span> one column of gene values, one row
-          per gene — the original format.{' '}
-          <span className="font-medium">Multiple patients:</span> one row per patient and one
-          column per gene, with an optional sample-ID column.
+          . For sample rows, include a header with every gene/probe ID (and optionally a sample-ID column). For gene rows, the first column must contain gene/probe IDs and each remaining column is a sample. Values are aligned by identifier; missing and non-finite values are rejected.
         </p>
       </div>
 

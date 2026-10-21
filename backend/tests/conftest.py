@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+
+import joblib
 
 import pytest
 
@@ -13,8 +15,25 @@ class FakeModel:
     """Stand-in for a loaded MICRO-AI model with a known gene dimension."""
 
     def __init__(self, n_genes=3, classes=(0, 1)):
-        self.training_info = {"n_genes_original": n_genes}
+        self.training_info = {
+            "n_genes_original": n_genes,
+            "n_genes_final": n_genes,
+            "training_imputation_applied": False,
+        }
         self.classes_ = list(classes)
+        self.gene_names = [f"g{index + 1}" for index in range(n_genes)]
+        self.selected_genes = list(range(n_genes))
+        self.quantile_normalizer = SimpleNamespace(reference_distribution=[0.0] * n_genes)
+        self.scaler = SimpleNamespace(mean_=[0.0] * n_genes, scale_=[1.0] * n_genes)
+        self.label_encoder = SimpleNamespace(classes_=list(classes))
+        component = lambda: SimpleNamespace(classes_=list(range(len(classes))))
+        self.ensemble = SimpleNamespace(
+            weights=[1 / 3] * 3,
+            gbm=component(),
+            rf=component(),
+            svm=component(),
+        )
+        self.combat_corrector = None
 
     def predict(self, X):
         return [1 if row[0] > 0 else 0 for row in X]
@@ -30,11 +49,8 @@ def _stub_joblib_load(_path):
     return FakeModel()
 
 
-# Avoid importing sklearn / real joblib artifacts when the API module loads.
-sys.modules.setdefault("microai_model", MagicMock())
-_fake_joblib = MagicMock()
-_fake_joblib.load.side_effect = _stub_joblib_load
-sys.modules.setdefault("joblib", _fake_joblib)
+# Use the real model implementation, but never deserialize production artifacts in API tests.
+joblib.load = _stub_joblib_load
 
 from fastapi.testclient import TestClient  # noqa: E402
 

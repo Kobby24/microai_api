@@ -7,36 +7,7 @@ import ErrorBanner from './components/ErrorBanner'
 import JsonTab from './components/JsonTab'
 import CsvTab from './components/CsvTab'
 import Results from './components/Results'
-
-function parseExpression(raw) {
-  const trimmed = raw.trim()
-  if (!trimmed) {
-    throw new Error('Please paste a JSON array of gene expression values.')
-  }
-
-  let parsed
-  try {
-    parsed = JSON.parse(trimmed)
-  } catch {
-    throw new Error('Input must be a valid JSON array of floats.')
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error('Input must be a JSON array of floats, e.g. [2.45, 1.02, 5.6].')
-  }
-
-  if (parsed.length === 0) {
-    throw new Error('The expression array cannot be empty.')
-  }
-
-  return parsed.map((value, index) => {
-    const numeric = typeof value === 'number' ? value : Number(value)
-    if (!Number.isFinite(numeric)) {
-      throw new Error(`Value at index ${index} is not a valid float.`)
-    }
-    return numeric
-  })
-}
+import { parseExpressionInput } from './expressionInput'
 
 export default function App() {
   const [models, setModels] = useState([])
@@ -70,6 +41,9 @@ export default function App() {
             predicts: '',
             predicts_label: '',
             expected_genes: null,
+            feature_ids: null,
+            ready: false,
+            readiness_reason: 'The API did not provide a verified model schema.',
             label_meanings: {},
           }))
         }
@@ -109,9 +83,12 @@ export default function App() {
 
     try {
       requireModel()
-      const expression = parseExpression(jsonInput)
+      if (!selectedMeta?.ready) {
+        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for safe prediction.')
+      }
+      const input = parseExpressionInput(jsonInput, selectedMeta.feature_ids)
       setLoading(true)
-      const result = await predictJson(selectedModel, expression)
+      const result = await predictJson(selectedModel, input.expression, input.featureIds)
       setJsonResult(result)
     } catch (err) {
       setError(err.response || err.request ? extractApiError(err) : err.message)
@@ -128,6 +105,9 @@ export default function App() {
 
     try {
       requireModel()
+      if (!selectedMeta?.ready) {
+        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for safe prediction.')
+      }
       if (!csvFile) {
         throw new Error('Upload a .csv or .tsv file before running a batch prediction.')
       }
@@ -201,7 +181,7 @@ export default function App() {
               onChange={setJsonInput}
               onSubmit={handleJsonSubmit}
               loading={loading}
-              disabled={loading || !selectedModel}
+              disabled={loading || !selectedMeta?.ready}
               model={selectedMeta}
             />
           ) : (
@@ -212,7 +192,7 @@ export default function App() {
               onDragState={setIsDragging}
               onSubmit={handleCsvSubmit}
               loading={loading}
-              disabled={loading || !selectedModel}
+              disabled={loading || !selectedMeta?.ready}
               model={selectedMeta}
             />
           )}

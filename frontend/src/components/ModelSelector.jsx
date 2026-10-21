@@ -77,6 +77,20 @@ export default function ModelSelector({
               {selected.description}
             </p>
           )}
+          {selected.ready && selected.feature_ids?.length ? (
+            <details className="text-sm text-slate-700 sm:col-span-3">
+              <summary className="cursor-pointer font-medium">
+                Required input order ({selected.feature_ids.length} gene/probe identifiers)
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-auto rounded border border-slate-200 bg-white p-3 text-xs leading-relaxed">
+                {selected.feature_ids.join('\n')}
+              </pre>
+            </details>
+          ) : (
+            <p className="text-sm font-medium text-red-800 sm:col-span-3" role="status">
+              {selected.readiness_reason || 'Predictions are disabled because this model is not ready.'}
+            </p>
+          )}
         </div>
       )}
     </section>

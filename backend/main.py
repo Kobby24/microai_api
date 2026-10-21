@@ -1,8 +1,12 @@
 import joblib
+import logging
 import numpy as np
+import os
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict
 import __main__
 
@@ -22,6 +26,24 @@ from tabular import (
 )
 
 app = FastAPI(title="MICRO-AI Prediction API")
+logger = logging.getLogger(__name__)
+
+
+def _positive_limit(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    try:
+        value = int(raw) if raw is not None else default
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be a positive integer")
+    return value
+
+
+MAX_UPLOAD_BYTES = _positive_limit("MICROAI_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
+MAX_BATCH_ROWS = _positive_limit("MICROAI_MAX_BATCH_ROWS", 1000)
+MAX_BATCH_CELLS = _positive_limit("MICROAI_MAX_BATCH_CELLS", 1_000_000)
+MAX_JSON_FEATURES = _positive_limit("MICROAI_MAX_JSON_FEATURES", 100_000)
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,8 +105,197 @@ MODEL_CATALOG = {
 
 def _expected_genes(model) -> Optional[int]:
     info = getattr(model, "training_info", None) or {}
+    if not isinstance(info, dict):
+        return None
     n = info.get("n_genes_original")
-    return int(n) if n is not None else None
+    if isinstance(n, bool) or not isinstance(n, (int, np.integer)) or n <= 0:
+        return None
+    return int(n)
+
+
+def _feature_ids(model) -> Optional[List[str]]:
+    raw_ids = getattr(model, "gene_names", None)
+    if raw_ids is None:
+        return None
+    try:
+        raw_values = list(raw_ids)
+    except TypeError:
+        return None
+    if any(not isinstance(value, str) for value in raw_values):
+        return None
+    feature_ids = [value.strip() for value in raw_values]
+    expected = _expected_genes(model)
+    if (
+        not feature_ids
+        or any(not value for value in feature_ids)
+        or len(set(feature_ids)) != len(feature_ids)
+        or (expected is not None and len(feature_ids) != expected)
+    ):
+        return None
+    selected = getattr(model, "selected_genes", None)
+    if selected is not None:
+        try:
+            indices = np.asarray(selected, dtype=int)
+        except (TypeError, ValueError):
+            return None
+        if indices.ndim != 1 or np.any(indices < 0) or np.any(indices >= len(feature_ids)):
+            return None
+    return feature_ids
+
+
+def _model_readiness_issue(name: str, model) -> Optional[str]:
+    feature_ids = _feature_ids(model)
+    if feature_ids is None:
+        return "This model has no verified ordered gene/probe schema."
+    if _expected_genes(model) is None:
+        return "This model has no valid input-dimension metadata."
+
+    info = getattr(model, "training_info", None) or {}
+    imputation_applied = info.get("training_imputation_applied")
+    if not isinstance(imputation_applied, (bool, np.bool_)) or bool(imputation_applied):
+        return "This model's training missing-value behavior is unknown or incompatible with inference."
+    try:
+        raw_selected = np.asarray(getattr(model, "selected_genes", []))
+        selected_numeric = raw_selected.astype(float)
+        if not np.isfinite(selected_numeric).all() or not np.equal(selected_numeric, np.floor(selected_numeric)).all():
+            return "This model has invalid feature-selection metadata."
+        selected = selected_numeric.astype(int)
+        selected_count = info.get("n_genes_final")
+        if selected_count is not None:
+            selected_count = int(selected_count)
+    except (TypeError, ValueError, OverflowError):
+        return "This model has invalid feature-selection metadata."
+    if (
+        selected.ndim != 1
+        or selected.size == 0
+        or len(set(selected.tolist())) != selected.size
+        or (selected_count is not None and int(selected_count) != selected.size)
+    ):
+        return "This model has invalid feature-selection metadata."
+
+    reference = getattr(getattr(model, "quantile_normalizer", None), "reference_distribution", None)
+    try:
+        reference_array = np.asarray(reference, dtype=float)
+    except (TypeError, ValueError):
+        reference_array = np.asarray([])
+    if reference is None or reference_array.shape != (len(feature_ids),) or not np.isfinite(reference_array).all():
+        return "This model has incomplete fitted preprocessing state."
+
+    scaler = getattr(model, "scaler", None)
+    scaler_mean = getattr(scaler, "mean_", None)
+    scaler_scale = getattr(scaler, "scale_", None)
+    try:
+        scaler_mean_array = np.asarray(scaler_mean, dtype=float)
+        scaler_scale_array = np.asarray(scaler_scale, dtype=float)
+    except (TypeError, ValueError):
+        scaler_mean_array = scaler_scale_array = np.asarray([])
+    if (
+        scaler_mean is None
+        or scaler_scale is None
+        or scaler_mean_array.shape != (selected.size,)
+        or scaler_scale_array.shape != (selected.size,)
+        or not np.isfinite(scaler_mean_array).all()
+        or not np.isfinite(scaler_scale_array).all()
+        or np.any(scaler_scale_array <= 0)
+    ):
+        return "This model has incomplete fitted preprocessing state."
+
+    classes = list(getattr(model, "classes_", []))
+    encoder_classes = getattr(getattr(model, "label_encoder", None), "classes_", None)
+    if len(classes) < 2 or encoder_classes is None or [_normalize_class_label(v) for v in classes] != [
+        _normalize_class_label(v) for v in encoder_classes
+    ]:
+        return "This model has inconsistent class-label metadata."
+    label_meanings = MODEL_CATALOG.get(name, {}).get("label_meanings", {})
+    if any(class_key not in label_meanings for class_key in map(_normalize_class_label, classes)):
+        return "This model's class labels are not mapped to the catalogued target."
+
+    ensemble = getattr(model, "ensemble", None)
+    try:
+        weights = np.asarray(getattr(ensemble, "weights", []), dtype=float)
+    except (TypeError, ValueError):
+        weights = np.asarray([])
+    if (
+        weights.shape != (3,)
+        or not np.isfinite(weights).all()
+        or np.any(weights < 0)
+        or not np.isclose(weights.sum(), 1.0, atol=1e-6)
+    ):
+        return "This model has invalid ensemble weights."
+    for component_name in ("gbm", "rf", "svm"):
+        component_classes = getattr(getattr(ensemble, component_name, None), "classes_", None)
+        if component_classes is None or not np.array_equal(component_classes, np.arange(len(classes))):
+            return "This model has inconsistent ensemble class ordering."
+
+    if getattr(model, "combat_corrector", None) is not None:
+        return "This model requires batch labels that the current prediction API does not accept."
+    return None
+
+
+def _require_model_ready(name: str, model) -> None:
+    issue = _model_readiness_issue(name, model)
+    if issue is not None:
+        raise HTTPException(status_code=503, detail=issue)
+
+
+def _ordered_expression(model, expression, supplied_feature_ids) -> np.ndarray:
+    expected_ids = _feature_ids(model)
+    if expected_ids is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Predictions are unavailable because this model has no verified gene/probe schema.",
+        )
+    if supplied_feature_ids is None:
+        raise HTTPException(status_code=400, detail="Gene/probe identifiers are required with expression values.")
+    identifiers = [str(value).strip() for value in supplied_feature_ids]
+    if (
+        len(identifiers) != len(expected_ids)
+        or any(not value for value in identifiers)
+        or len(set(identifiers)) != len(identifiers)
+        or set(identifiers) != set(expected_ids)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Feature identifiers do not match this model's required gene/probe set.",
+        )
+    if len(expression) != len(identifiers):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Expected {len(identifiers)} expression values, got {len(expression)}.",
+        )
+    by_id = dict(zip(identifiers, expression))
+    values = np.asarray([by_id[identifier] for identifier in expected_ids], dtype=float)
+    if not np.isfinite(values).all():
+        raise HTTPException(
+            status_code=400,
+            detail="Expression values must be numeric and finite; missing, NaN, and infinite values are not supported.",
+        )
+    return values.reshape(1, -1)
+
+
+def _checked_predictions(model, X):
+    classes = list(getattr(model, "classes_", []))
+    class_keys = [_normalize_class_label(value) for value in classes]
+    if not classes or len(set(class_keys)) != len(class_keys):
+        raise ValueError("Model class metadata is invalid.")
+
+    predictions = np.asarray(model.predict(X))
+    if predictions.shape != (X.shape[0],):
+        raise ValueError("Model prediction dimensions do not match the input batch.")
+    probabilities = np.asarray(model.predict_proba(X), dtype=float)
+    if probabilities.shape != (X.shape[0], len(classes)):
+        raise ValueError("Model probability dimensions do not match class metadata.")
+    if (
+        not np.isfinite(probabilities).all()
+        or np.any(probabilities < 0)
+        or np.any(probabilities > 1)
+        or not np.allclose(probabilities.sum(axis=1), 1.0, atol=1e-6)
+    ):
+        raise ValueError("Model returned invalid class probabilities.")
+    for prediction, row in zip(predictions, probabilities):
+        if _normalize_class_label(prediction) != class_keys[int(np.argmax(row))]:
+            raise ValueError("Model prediction does not match its class probabilities.")
+    return predictions, probabilities, class_keys
 
 
 def _normalize_class_label(cls) -> str:
@@ -130,6 +341,7 @@ def _model_info(name: str) -> dict:
     model = MODELS[name]
     catalog = MODEL_CATALOG.get(name, {})
     classes = _model_classes(model)
+    readiness_issue = _model_readiness_issue(name, model)
     return {
         "name": name,
         "display_name": catalog.get("display_name", name.upper()),
@@ -137,6 +349,9 @@ def _model_info(name: str) -> dict:
         "predicts_label": catalog.get("predicts_label", catalog.get("predicts", "Unknown target")),
         "description": catalog.get("description", ""),
         "expected_genes": _expected_genes(model),
+        "feature_ids": _feature_ids(model),
+        "ready": readiness_issue is None,
+        "readiness_reason": readiness_issue,
         "classes": classes,
         "label_meanings": _label_meanings(name, classes),
     }
@@ -149,12 +364,26 @@ class ModelInfo(BaseModel):
     predicts_label: str
     description: str
     expected_genes: Optional[int] = None
+    feature_ids: Optional[List[str]] = None
+    ready: bool = False
+    readiness_reason: Optional[str] = None
     classes: List[str] = Field(default_factory=list)
     label_meanings: Dict[str, str] = Field(default_factory=dict)
 
 
 class ModelsResponse(BaseModel):
     models: List[ModelInfo]
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(_request, _exc):
+    return JSONResponse(status_code=422, content={"detail": "Invalid request data."})
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_handler(_request, exc):
+    logger.exception("Unhandled API error", exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
 @app.get("/health")
@@ -177,12 +406,36 @@ def get_model(model_name: str):
 
 # --- EXISTING JSON ENDPOINT ---
 class PredictionRequest(BaseModel):
-    expression: List[float] = Field(...)
+    expression: List[float] = Field(..., min_length=1, max_length=MAX_JSON_FEATURES)
+    feature_ids: List[str] = Field(..., min_length=1, max_length=MAX_JSON_FEATURES)
+
+    @field_validator("expression", mode="before")
+    @classmethod
+    def validate_expression(cls, values):
+        if not isinstance(values, list):
+            raise ValueError("Expression values must be finite JSON numbers.")
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("Expression values must be finite JSON numbers.")
+            try:
+                finite = np.isfinite(float(value))
+            except (OverflowError, TypeError, ValueError):
+                finite = False
+            if not finite:
+                raise ValueError("Expression values must be finite JSON numbers.")
+        return values
+
+    @field_validator("feature_ids", mode="before")
+    @classmethod
+    def validate_feature_ids(cls, values):
+        if not isinstance(values, list) or any(not isinstance(value, str) or not value.strip() for value in values):
+            raise ValueError("Feature identifiers must be non-empty strings.")
+        return [value.strip() for value in values]
 
 class PredictionResponse(BaseModel):
     prediction: str
     probability: float
-    class_probabilities: dict
+    class_probabilities: Dict[str, float]
 
 @app.post("/predict/{model_name}", response_model=PredictionResponse)
 def predict_json(model_name: str, request: PredictionRequest):
@@ -191,17 +444,19 @@ def predict_json(model_name: str, request: PredictionRequest):
         raise HTTPException(status_code=404, detail="Model not found")
     
     model = MODELS[model_name]
-    X = np.array(request.expression, dtype=float).reshape(1, -1)
-
-    expected_genes = model.training_info.get("n_genes_original")
-    if expected_genes and X.shape[1] != expected_genes:
-        raise HTTPException(status_code=400, detail=f"Expected {expected_genes} genes, got {X.shape[1]}")
-
-    pred = model.predict(X)[0]
-    proba = model.predict_proba(X)[0]
-    class_probs = {str(cls): float(p) for cls, p in zip(model.classes_, proba)}
-
-    return PredictionResponse(prediction=str(pred), probability=float(max(proba)), class_probabilities=class_probs)
+    _require_model_ready(model_name, model)
+    X = _ordered_expression(model, request.expression, request.feature_ids)
+    try:
+        predictions, probabilities, class_keys = _checked_predictions(model, X)
+    except Exception as exc:
+        logger.exception("Model prediction failed for %s", model_name)
+        raise HTTPException(status_code=500, detail="Prediction failed.") from exc
+    proba = probabilities[0]
+    return PredictionResponse(
+        prediction=_normalize_class_label(predictions[0]),
+        probability=float(np.max(proba)),
+        class_probabilities={key: float(value) for key, value in zip(class_keys, proba)},
+    )
 
 
 # --- CSV / TSV BATCH ENDPOINT ---
@@ -218,32 +473,48 @@ async def predict_csv(model_name: str, file: UploadFile = File(...)):
 
     model = MODELS[model_name]
     kind = table_kind(filename)
+    _require_model_ready(model_name, model)
 
     try:
-        # 2. Read the uploaded file directly into memory using Pandas
-        contents = await file.read()
+        contents = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
         df = read_expression_table(contents, filename)
-        expected_genes = model.training_info.get("n_genes_original")
-        X, sample_ids = prepare_expression_matrix(df, expected_genes, model_name)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading {kind}: {str(e)}")
+        expected_feature_ids = _feature_ids(model)
+        if expected_feature_ids is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Predictions are unavailable because this model has no verified gene/probe schema.",
+            )
+        X, sample_ids = prepare_expression_matrix(
+            df,
+            _expected_genes(model),
+            model_name,
+            expected_feature_ids=expected_feature_ids,
+        )
+        if X.shape[0] > MAX_BATCH_ROWS or X.size > MAX_BATCH_CELLS:
+            raise HTTPException(status_code=413, detail="The batch exceeds the configured processing limit.")
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unable to parse uploaded %s", kind)
+        raise HTTPException(status_code=400, detail=f"Unable to read the uploaded {kind} file.") from exc
 
-    # 4. Generate predictions for all rows (patients) in the file
     try:
-        preds = model.predict(X)
-        probas = model.predict_proba(X)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+        preds, probas, class_keys = _checked_predictions(model, X)
+    except Exception as exc:
+        logger.exception("Batch prediction failed for %s", model_name)
+        raise HTTPException(status_code=500, detail="Prediction failed.") from exc
 
     # 5. Format the results
     results = []
     for i in range(len(preds)):
-        row_probs = {str(cls): float(p) for cls, p in zip(model.classes_, probas[i])}
+        row_probs = {key: float(p) for key, p in zip(class_keys, probas[i])}
         row = {
             "sample_index": i,
-            "prediction": str(preds[i]),
+            "prediction": _normalize_class_label(preds[i]),
             "probability": float(max(probas[i])),
             "class_probabilities": row_probs
         }
