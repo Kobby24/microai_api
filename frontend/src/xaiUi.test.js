@@ -189,4 +189,70 @@ describe('SHAP explanation UI', () => {
     const markup = renderResults({ jsonResult: null, csvResult: { samples_processed: 0, results: [] } })
     assert.doesNotMatch(markup, /Explain prediction/)
   })
+
+  it('offers an explanation action for every batch result, including later samples', () => {
+    const results = Array.from({ length: 12 }, (_, sample_index) => ({
+      sample_index,
+      prediction: sample_index % 2 ? '1' : '0',
+      probability: 0.75,
+      class_probabilities: { '0': 0.25, '1': 0.75 },
+    }))
+    const markup = renderResults({
+      jsonResult: null,
+      csvResult: { samples_processed: results.length, filename: 'patients.csv', results },
+    })
+
+    assert.equal((markup.match(/aria-label="View explanation for /g) || []).length, results.length)
+    assert.match(markup, /aria-label="View explanation for Sample 11"/)
+    assert.doesNotMatch(markup, /showing the first 10/)
+  })
+
+  it('shows selected sample prediction details, explanation, and an accessible back action', () => {
+    const row = {
+      sample_index: 4,
+      prediction: '1',
+      probability: 0.8,
+      class_probabilities: { '0': 0.2, '1': 0.8 },
+    }
+    const markup = renderResults({
+      jsonResult: null,
+      csvResult: { samples_processed: 1, filename: 'patients.csv', results: [row] },
+      selectedBatchRow: row,
+      explanation,
+    })
+
+    assert.match(markup, /Prediction details/)
+    assert.match(markup, /Sample 4/)
+    assert.match(markup, /Model confidence \(predicted-class probability\)/)
+    assert.match(markup, /The strongest SHAP contributions toward this class/)
+    assert.match(markup, /Show technical details/)
+    assert.match(markup, /Back to results/)
+  })
+
+  it('keeps selected batch predictions visible during explanation loading and errors', () => {
+    const row = {
+      sample_index: 0,
+      prediction: '1',
+      probability: 0.8,
+      class_probabilities: { '0': 0.2, '1': 0.8 },
+    }
+    const loadingMarkup = renderResults({
+      jsonResult: null,
+      csvResult: { samples_processed: 1, filename: 'patients.csv', results: [row] },
+      selectedBatchRow: row,
+      explaining: true,
+    })
+    const errorMarkup = renderResults({
+      jsonResult: null,
+      csvResult: { samples_processed: 1, filename: 'patients.csv', results: [row] },
+      selectedBatchRow: row,
+      explanationError: 'Source mapping unavailable.',
+    })
+
+    assert.match(loadingMarkup, /Calculating a local explanation/)
+    assert.match(loadingMarkup, /ER-negative/)
+    assert.match(errorMarkup, /Explanation unavailable/)
+    assert.match(errorMarkup, /Source mapping unavailable/)
+    assert.match(errorMarkup, /Try again/)
+  })
 })

@@ -7,6 +7,7 @@ import ErrorBanner from './components/ErrorBanner'
 import JsonTab from './components/JsonTab'
 import CsvTab from './components/CsvTab'
 import Results from './components/Results'
+import { batchSamplePayload, parseBatchExpressionText } from './batchFile'
 import { parseExpressionInput } from './expressionInput'
 import { canStartExplanation, explanationReducer, initialExplanationState } from './explanationState'
 import { isExplanationForPrediction } from './xaiPresentation'
@@ -26,12 +27,15 @@ export default function App() {
   const [jsonResult, setJsonResult] = useState(null)
   const [csvResult, setCsvResult] = useState(null)
   const [jsonRequest, setJsonRequest] = useState(null)
+  const [selectedBatchRow, setSelectedBatchRow] = useState(null)
   const [explanationState, dispatchExplanation] = useReducer(
     explanationReducer,
     initialExplanationState,
   )
   const explanationRequestId = useRef(0)
   const explanationAbortController = useRef(null)
+  const batchSourceRef = useRef(null)
+  const batchRequestKeyRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -89,7 +93,14 @@ export default function App() {
     explanationRequestId.current += 1
     explanationAbortController.current?.abort()
     explanationAbortController.current = null
+    batchRequestKeyRef.current = null
     dispatchExplanation({ type: 'reset' })
+  }
+
+  function resetBatchSelection() {
+    setSelectedBatchRow(null)
+    batchSourceRef.current = null
+    batchRequestKeyRef.current = null
   }
 
   async function handleJsonSubmit(event) {
@@ -98,6 +109,7 @@ export default function App() {
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
+    resetBatchSelection()
     resetExplanation()
 
     try {
@@ -123,6 +135,7 @@ export default function App() {
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
+    resetBatchSelection()
     resetExplanation()
 
     try {
@@ -133,6 +146,7 @@ export default function App() {
       if (!csvFile) {
         throw new Error('Upload a .csv or .tsv file before running a batch prediction.')
       }
+      batchSourceRef.current = null
       setLoading(true)
       const result = await predictCsv(selectedModel, csvFile)
       setCsvResult(result)
@@ -145,15 +159,17 @@ export default function App() {
 
   function handleCsvFileChange(file, fileError) {
     setCsvFile(file)
+    resetBatchSelection()
+    resetExplanation()
     setError(fileError || '')
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
-    resetExplanation()
   }
 
   function handleJsonInputChange(value) {
     setJsonInput(value)
+    resetBatchSelection()
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
@@ -162,6 +178,7 @@ export default function App() {
 
   function handleSampleIdChange(value) {
     setSampleId(value)
+    resetBatchSelection()
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
@@ -210,9 +227,97 @@ export default function App() {
     }
   }
 
+  async function handleBatchExplain(row) {
+    const requestKey = `${selectedModel}:${row?.sample_index}`
+    setSelectedBatchRow(row)
+    if (batchRequestKeyRef.current === requestKey) return
+
+    explanationRequestId.current += 1
+    const requestId = explanationRequestId.current
+    explanationAbortController.current?.abort()
+    const abortController = new AbortController()
+    explanationAbortController.current = abortController
+    batchRequestKeyRef.current = requestKey
+    dispatchExplanation({ type: 'start', requestId })
+
+    try {
+      if (!csvFile) {
+        throw new Error('The uploaded source file is no longer available. Upload it again to explain a sample.')
+      }
+      if (!selectedMeta?.ready || !Array.isArray(selectedMeta.feature_ids)) {
+        throw new Error('The selected model does not have a verified gene/probe input schema.')
+      }
+
+      let source = batchSourceRef.current
+      if (source?.file !== csvFile || source.modelName !== selectedModel) {
+        const text = await csvFile.text()
+        if (requestId !== explanationRequestId.current) return
+        const parsed = parseBatchExpressionText(text, csvFile.name, selectedMeta.feature_ids)
+        if (
+          parsed.samples.length !== csvResult?.samples_processed
+          || parsed.samples.length !== csvResult?.results?.length
+        ) {
+          throw new Error('The uploaded file no longer matches the batch results. Run the batch prediction again.')
+        }
+        source = {
+          file: csvFile,
+          modelName: selectedModel,
+          parsed,
+          explanations: new Map(),
+        }
+        batchSourceRef.current = source
+      }
+
+      const payload = batchSamplePayload(source.parsed, row)
+      if (source.explanations.has(row.sample_index)) {
+        dispatchExplanation({
+          type: 'success',
+          requestId,
+          result: source.explanations.get(row.sample_index),
+        })
+        return
+      }
+
+      const result = await explainJson(
+        selectedModel,
+        payload.expression,
+        payload.featureIds,
+        undefined,
+        abortController.signal,
+        payload.sampleId,
+      )
+      if (
+        !isExplanationForPrediction(result, selectedMeta, row)
+        || (result.sample_id != null && String(result.sample_id) !== String(payload.sampleId ?? ''))
+      ) {
+        throw new Error('The explanation response did not match the selected batch sample.')
+      }
+      if (requestId !== explanationRequestId.current) return
+      source.explanations.set(row.sample_index, result)
+      dispatchExplanation({ type: 'success', requestId, result })
+    } catch (err) {
+      if (requestId !== explanationRequestId.current || abortController.signal.aborted) return
+      dispatchExplanation({
+        type: 'failure',
+        requestId,
+        error: err.response || err.request ? extractApiError(err) : err.message,
+      })
+    } finally {
+      if (explanationAbortController.current === abortController) {
+        explanationAbortController.current = null
+        batchRequestKeyRef.current = null
+      }
+    }
+  }
+
+  function handleCloseBatchExplanation() {
+    setSelectedBatchRow(null)
+  }
+
   function handleModelChange(name) {
     setSelectedModel(name)
     setCsvFile(null)
+    resetBatchSelection()
     setJsonResult(null)
     setCsvResult(null)
     setJsonRequest(null)
@@ -296,6 +401,9 @@ export default function App() {
           explaining={explanationState.status === 'loading'}
           explanation={explanationState.result}
           explanationError={explanationState.error}
+          selectedBatchRow={selectedBatchRow}
+          onExplainBatch={handleBatchExplain}
+          onCloseBatchExplanation={handleCloseBatchExplanation}
         />
       </main>
     </div>

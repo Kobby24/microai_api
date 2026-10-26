@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, LoaderCircle, Sparkles, Table2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Eye, LoaderCircle, Sparkles, Table2, X } from 'lucide-react'
 import { interpretClass, interpretPrediction, summarizeBatch } from '../interpret'
 import ExplanationPanel from './ExplanationPanel'
 
@@ -146,8 +146,126 @@ function JsonResults({ result, model, onExplain, explaining, explanation, explan
   )
 }
 
-function CsvResults({ result, model }) {
-  const rows = (result.results || []).slice(0, 10)
+function BatchPredictionDetails({
+  row,
+  model,
+  onExplain,
+  onClose,
+  explaining,
+  explanation,
+  explanationError,
+}) {
+  const sampleLabel = row.sample_id || `Sample ${row.sample_index}`
+  const probabilities = Object.entries(row.class_probabilities || {})
+
+  return (
+    <section
+      className="mb-5 rounded-lg border border-blue-200 bg-blue-50/50 p-4"
+      aria-labelledby="batch-detail-heading"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">
+            Prediction details
+          </p>
+          <h3 id="batch-detail-heading" className="mt-1 text-lg font-semibold text-slate-900">
+            {sampleLabel}
+          </h3>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        >
+          <X className="h-4 w-4" />
+          Back to results
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="rounded-md border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {model?.predicts_label || 'Prediction'}
+          </p>
+          <p className="mt-1 font-semibold text-slate-900">
+            {interpretClass(row.prediction, model)}
+            <span className="ml-2 font-mono text-sm font-normal text-slate-500">
+              ({row.prediction})
+            </span>
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            Model confidence (predicted-class probability):{' '}
+            <span className="font-mono font-medium text-slate-800">{formatPercent(row.probability)}</span>
+          </p>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Class probabilities
+          </p>
+          {probabilities.length ? (
+            <ul className="mt-2 space-y-1.5">
+              {probabilities.map(([classKey, value]) => (
+                <li key={classKey} className="flex justify-between gap-3 text-sm">
+                  <span className="text-slate-600">
+                    {interpretClass(classKey, model)}
+                    {String(classKey) === String(row.prediction) ? ' · predicted' : ''}
+                  </span>
+                  <span className="shrink-0 font-mono tabular-nums text-slate-800">
+                    {formatPercent(value)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">Class probabilities are unavailable.</p>
+          )}
+        </div>
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">
+        These are model outputs for research and decision support, not a standalone clinical diagnosis.
+      </p>
+
+      {explaining && (
+        <p className="mt-4 flex items-center gap-2 text-sm text-slate-600" role="status" aria-live="polite">
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+          Calculating a local explanation for this sample…
+        </p>
+      )}
+
+      {explanationError && (
+        <div className="mt-4 flex items-start gap-2 text-sm text-red-800" role="alert">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Explanation unavailable</p>
+            <p>{explanationError}</p>
+            <button
+              type="button"
+              onClick={() => onExplain(row)}
+              disabled={explaining}
+              className="mt-2 font-medium underline underline-offset-2 disabled:opacity-60"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+
+      {explanation && <ExplanationPanel explanation={explanation} model={model} />}
+    </section>
+  )
+}
+
+function CsvResults({
+  result,
+  model,
+  selectedRow,
+  onExplain,
+  onCloseExplanation,
+  explaining,
+  explanation,
+  explanationError,
+}) {
+  const rows = result.results || []
   const hasIds = (result.results || []).some((row) => row.sample_id)
   const counts = summarizeBatch(result.results, model)
   const countSummary = Object.entries(counts)
@@ -166,9 +284,6 @@ function CsvResults({ result, model }) {
           </p>
           <p className="mt-0.5 text-sm text-slate-600">
             Source file: <span className="font-medium">{result.filename}</span>
-            {result.results?.length > 10
-              ? ` · showing the first 10 of ${result.results.length} results`
-              : ''}
           </p>
           {countSummary && (
             <p className="mt-2 text-sm text-slate-700">Breakdown: {countSummary}</p>
@@ -176,37 +291,63 @@ function CsvResults({ result, model }) {
         </div>
       </div>
 
+      {selectedRow && (
+        <BatchPredictionDetails
+          row={selectedRow}
+          model={model}
+          onExplain={onExplain}
+          onClose={onCloseExplanation}
+          explaining={explaining}
+          explanation={explanation}
+          explanationError={explanationError}
+        />
+      )}
+
       <div className="overflow-hidden rounded-lg border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-4 py-2.5 font-semibold text-slate-600">
-                {hasIds ? 'Sample ID' : 'Sample index'}
-              </th>
-              <th className="px-4 py-2.5 font-semibold text-slate-600">
-                {model?.predicts_label || 'Prediction'}
-              </th>
-              <th className="px-4 py-2.5 font-semibold text-slate-600">Model output</th>
-              <th className="px-4 py-2.5 font-semibold text-slate-600">Confidence</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {rows.map((row) => (
-              <tr key={row.sample_index}>
-                <td className="px-4 py-2.5 text-slate-600">
-                  {row.sample_id || row.sample_index}
-                </td>
-                <td className="px-4 py-2.5 font-medium text-slate-900">
-                  {interpretClass(row.prediction, model)}
-                </td>
-                <td className="px-4 py-2.5 tabular-nums text-slate-500">{row.prediction}</td>
-                <td className="px-4 py-2.5 tabular-nums text-slate-700">
-                  {formatPercent(row.probability)}
-                </td>
+        <div className="overflow-x-auto">
+          <table className="min-w-[48rem] divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">
+                  {hasIds ? 'Sample ID' : 'Sample index'}
+                </th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">
+                  {model?.predicts_label || 'Prediction'}
+                </th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Model output</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Confidence</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Explanation</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {rows.map((row) => (
+                <tr key={row.sample_index}>
+                  <td className="px-4 py-2.5 text-slate-600">
+                    {row.sample_id || `Sample ${row.sample_index}`}
+                  </td>
+                  <td className="px-4 py-2.5 font-medium text-slate-900">
+                    {interpretClass(row.prediction, model)}
+                  </td>
+                  <td className="px-4 py-2.5 tabular-nums text-slate-500">{row.prediction}</td>
+                  <td className="px-4 py-2.5 tabular-nums text-slate-700">
+                    {formatPercent(row.probability)}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => onExplain(row)}
+                      aria-label={`View explanation for ${row.sample_id || `Sample ${row.sample_index}`}`}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-800 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      View explanation
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
@@ -220,6 +361,9 @@ export default function Results({
   explaining = false,
   explanation,
   explanationError,
+  selectedBatchRow,
+  onExplainBatch,
+  onCloseBatchExplanation,
 }) {
   const hasJson = Boolean(jsonResult)
   const hasCsv = Boolean(csvResult)
@@ -247,7 +391,18 @@ export default function Results({
           explanationError={explanationError}
         />
       )}
-      {hasCsv && <CsvResults result={csvResult} model={model} />}
+      {hasCsv && (
+        <CsvResults
+          result={csvResult}
+          model={model}
+          selectedRow={selectedBatchRow}
+          onExplain={onExplainBatch}
+          onCloseExplanation={onCloseBatchExplanation}
+          explaining={explaining}
+          explanation={explanation}
+          explanationError={explanationError}
+        />
+      )}
     </section>
   )
 }
