@@ -1,7 +1,8 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Avenir Next', 'Segoe UI', sans-serif;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
 }
 
 html,
@@ -12,8 +13,75 @@ body,
 
 body {
   margin: 0;
-  background: #f8fafc;
+  background: #f4f7f8;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.eyebrow {
+  color: #2f7b78;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.surface-panel {
+  border: 1px solid #dce5e7;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(18, 59, 93, 0.05);
+}
+
+.meta-label {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workflow-track {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.workflow-step {
+  align-items: center;
+  color: #94a3b8;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.workflow-step b {
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.65rem;
+  height: 1.5rem;
+  justify-content: center;
+  width: 1.5rem;
+}
+
+.workflow-step-active {
+  color: #123b5d;
+}
+
+.workflow-step-active b {
+  background: #e6eeee;
+  border-color: #2f7b78;
+  color: #1f5f5c;
 }

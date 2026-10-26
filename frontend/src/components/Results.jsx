@@ -271,24 +271,39 @@ function CsvResults({
   const countSummary = Object.entries(counts)
     .map(([label, count]) => `${count} ${label}`)
     .join(' · ')
+  const summaryItems = Object.entries(counts)
+    .slice(0, 3)
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+      <div className="border-b border-slate-200 pb-5">
+        <div className="flex items-start gap-3">
         <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
         <div>
-          <p className="font-semibold text-slate-900">
+          <p className="text-lg font-semibold text-slate-950">
+            Analysis complete
+          </p>
+          <p className="mt-1 text-sm text-slate-600">
             Successfully processed {result.samples_processed}{' '}
             {result.samples_processed === 1 ? 'sample' : 'samples'}
             {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}
           </p>
-          <p className="mt-0.5 text-sm text-slate-600">
+          <p className="mt-1 text-xs text-slate-500">
             Source file: <span className="font-medium">{result.filename}</span>
           </p>
-          {countSummary && (
-            <p className="mt-2 text-sm text-slate-700">Breakdown: {countSummary}</p>
-          )}
         </div>
+      </div>
+        {summaryItems.length > 0 && (
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            {summaryItems.map(([label, count]) => (
+              <div key={label} className="border-l-2 border-[#2f7b78] bg-slate-50 px-4 py-3">
+                <p className="text-2xl font-semibold tabular-nums text-slate-950">{count}</p>
+                <p className="mt-1 text-xs font-medium text-slate-600">{label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {countSummary && <p className="mt-4 text-xs text-slate-500">Breakdown: {countSummary}</p>}
       </div>
 
       {selectedRow && (
@@ -369,8 +384,8 @@ export default function Results({
   const hasCsv = Boolean(csvResult)
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2">
+    <section className="surface-panel p-6">
+      <div className="mb-5 flex items-center gap-2 border-b border-slate-200 pb-4">
         <Table2 className="h-4 w-4 text-blue-700" />
         <h2 className="text-sm font-semibold text-slate-800">Results</h2>
       </div>
