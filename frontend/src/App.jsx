@@ -18,6 +18,7 @@ export default function App() {
   const [modelsLoading, setModelsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('json')
   const [jsonInput, setJsonInput] = useState('')
+  const [sampleId, setSampleId] = useState('')
   const [csvFile, setCsvFile] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -106,9 +107,9 @@ export default function App() {
       }
       const input = parseExpressionInput(jsonInput, selectedMeta.feature_ids)
       setLoading(true)
-      const result = await predictJson(selectedModel, input.expression, input.featureIds)
+      const result = await predictJson(selectedModel, input.expression, input.featureIds, sampleId)
       setJsonResult(result)
-      setJsonRequest(input)
+      setJsonRequest({ ...input, sampleId: sampleId.trim() })
     } catch (err) {
       setError(err.response || err.request ? extractApiError(err) : err.message)
     } finally {
@@ -159,6 +160,14 @@ export default function App() {
     resetExplanation()
   }
 
+  function handleSampleIdChange(value) {
+    setSampleId(value)
+    setJsonResult(null)
+    setCsvResult(null)
+    setJsonRequest(null)
+    resetExplanation()
+  }
+
   async function handleExplain() {
     if (!canStartExplanation({
       hasRequest: Boolean(jsonRequest),
@@ -180,6 +189,7 @@ export default function App() {
         jsonRequest.featureIds,
         undefined,
         abortController.signal,
+        jsonRequest.sampleId,
       )
       if (!isExplanationForPrediction(result, selectedMeta, jsonResult)) {
         throw new Error('The explanation response did not match the current prediction.')
@@ -256,6 +266,8 @@ export default function App() {
             <JsonTab
               value={jsonInput}
               onChange={handleJsonInputChange}
+              sampleId={sampleId}
+              onSampleIdChange={handleSampleIdChange}
               onSubmit={handleJsonSubmit}
               loading={loading}
               disabled={loading || !selectedMeta?.ready}

@@ -28,6 +28,6 @@ describe('batch result interpretation', () => {
     const interpreted = interpretPrediction(tsvResults[0].prediction, relapseModel)
     assert.equal(interpreted.target, 'Disease relapse')
     assert.equal(interpreted.classLabel, 'Relapse (True)')
-    assert.match(interpreted.summary, /relapse is True/)
+    assert.match(interpreted.summary, /not an independent clinical assessment/)
   })
 })

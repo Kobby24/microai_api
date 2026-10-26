@@ -50,20 +50,27 @@ export async function fetchModels() {
   return Array.isArray(data?.models) ? data.models : []
 }
 
-export async function predictJson(modelName, expression, featureIds) {
+export async function predictJson(modelName, expression, featureIds, sampleId) {
   const { data } = await client.post(`/predict/${encodeURIComponent(modelName)}`, {
     expression,
     feature_ids: featureIds,
+    ...(sampleId?.trim() ? { sample_id: sampleId.trim() } : {}),
   })
   return data
 }
 
-export async function explainJson(modelName, expression, featureIds, targetClass, signal) {
+export async function explainJson(modelName, expression, featureIds, targetClass, signal, sampleId) {
   const { data } = await client.post(`/explain/${encodeURIComponent(modelName)}`, {
     expression,
     feature_ids: featureIds,
     ...(targetClass ? { target_class: targetClass } : {}),
+    ...(sampleId?.trim() ? { sample_id: sampleId.trim() } : {}),
   }, { signal })
+  return data
+}
+
+export async function fetchGlobalDrivers(modelName) {
+  const { data } = await client.get(`/models/${encodeURIComponent(modelName)}/global-drivers`)
   return data
 }
 

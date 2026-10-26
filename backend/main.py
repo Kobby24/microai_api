@@ -32,6 +32,43 @@ app = FastAPI(title="MICRO-AI Prediction API")
 logger = logging.getLogger(__name__)
 
 
+def _load_gene_symbols(annotation_path: Path) -> Dict[str, str]:
+    symbols: Dict[str, str] = {}
+    ambiguous_ids = set()
+    try:
+        with annotation_path.open(newline="", encoding="utf-8-sig") as stream:
+            reader = csv.DictReader(stream)
+            if not {"ID", "Gene Symbol"}.issubset(reader.fieldnames or []):
+                logger.warning("GPL96 annotation file has no ID/Gene Symbol columns.")
+                return {}
+            for row in reader:
+                feature_id = (row.get("ID") or "").strip()
+                raw_symbols = (row.get("Gene Symbol") or "").strip()
+                candidates = [symbol.strip() for symbol in raw_symbols.split("///")]
+                if (
+                    not feature_id
+                    or len(candidates) != 1
+                    or not candidates[0]
+                    or candidates[0] in {"---", "NA"}
+                    or feature_id in ambiguous_ids
+                ):
+                    continue
+                symbol = candidates[0]
+                existing = symbols.get(feature_id)
+                if existing is not None and existing != symbol:
+                    symbols.pop(feature_id)
+                    ambiguous_ids.add(feature_id)
+                else:
+                    symbols[feature_id] = symbol
+    except OSError:
+        logger.warning("GPL96 annotation file is unavailable; probe IDs will be shown.")
+        return {}
+    return symbols
+
+
+GENE_SYMBOLS = _load_gene_symbols(Path(__file__).resolve().parent / "GPL96_annotation.csv")
+
+
 def _positive_limit(name: str, default: int) -> int:
     raw = os.getenv(name)
     try:
@@ -47,6 +84,7 @@ MAX_UPLOAD_BYTES = _positive_limit("MICROAI_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
 MAX_BATCH_ROWS = _positive_limit("MICROAI_MAX_BATCH_ROWS", 1000)
 MAX_BATCH_CELLS = _positive_limit("MICROAI_MAX_BATCH_CELLS", 1_000_000)
 MAX_JSON_FEATURES = _positive_limit("MICROAI_MAX_JSON_FEATURES", 100_000)
+EXPLANATION_DRIVER_LIMIT = 8
 
 app.add_middleware(
     CORSMiddleware,
@@ -454,6 +492,7 @@ def get_model(model_name: str):
 class PredictionRequest(BaseModel):
     expression: List[float] = Field(..., min_length=1, max_length=MAX_JSON_FEATURES)
     feature_ids: List[str] = Field(..., min_length=1, max_length=MAX_JSON_FEATURES)
+    sample_id: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator("expression", mode="before")
     @classmethod
@@ -478,10 +517,21 @@ class PredictionRequest(BaseModel):
             raise ValueError("Feature identifiers must be non-empty strings.")
         return [value.strip() for value in values]
 
+    @field_validator("sample_id")
+    @classmethod
+    def validate_sample_id(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Sample ID must be a string.")
+        return value.strip() or None
+
+
 class PredictionResponse(BaseModel):
     prediction: str
     probability: float
     class_probabilities: Dict[str, float]
+    sample_id: Optional[str] = None
 
 
 class ExplanationRequest(PredictionRequest):
@@ -493,6 +543,21 @@ class ExplanationFeature(BaseModel):
     raw_input_value: float
     model_input_value: float
     shap_value: float
+    gene_symbol: Optional[str] = None
+    expression_level: str
+    direction: str
+    relative_influence_percent: Optional[float] = None
+
+
+class ExplanationDriver(BaseModel):
+    feature_id: str
+    gene_symbol: Optional[str] = None
+    raw_input_value: float
+    model_input_value: float
+    expression_level: str
+    direction: str
+    shap_value: float
+    relative_influence_percent: float
 
 
 class ExplanationMetadata(BaseModel):
@@ -508,6 +573,7 @@ class ExplanationMetadata(BaseModel):
 
 class ExplanationResponse(BaseModel):
     model_name: str
+    sample_id: Optional[str] = None
     prediction: str
     prediction_label: str
     explained_class: str
@@ -517,9 +583,163 @@ class ExplanationResponse(BaseModel):
     base_value: float
     predicted_output: float
     features: List[ExplanationFeature]
+    drivers: List[ExplanationDriver]
+    summary: str
     metadata: ExplanationMetadata
 
-@app.post("/predict/{model_name}", response_model=PredictionResponse)
+
+class GlobalDriver(BaseModel):
+    feature_id: str
+    gene_symbol: Optional[str] = None
+    importance: float
+
+
+class GlobalDriversResponse(BaseModel):
+    model_name: str
+    method: str
+    drivers: List[GlobalDriver]
+
+
+def _expression_level(value: float) -> str:
+    if value <= -2:
+        return "much lower than typical"
+    if value <= -1:
+        return "lower than typical"
+    if value < 1:
+        return "about typical"
+    if value < 2:
+        return "higher than typical"
+    return "much higher than typical"
+
+
+def _enrich_explanation_features(features, explained_class_label: str):
+    ordered = sorted(features, key=lambda feature: abs(float(feature["shap_value"])), reverse=True)
+    top_features = ordered[:EXPLANATION_DRIVER_LIMIT]
+    top_magnitude = sum(abs(float(feature["shap_value"])) for feature in top_features)
+    enriched = []
+    drivers = []
+    for index, feature in enumerate(ordered):
+        shap_value = float(feature["shap_value"])
+        direction = (
+            "toward_explained_class"
+            if shap_value > 0
+            else "away_from_explained_class"
+            if shap_value < 0
+            else "no_directional_contribution"
+        )
+        gene_symbol = GENE_SYMBOLS.get(feature["feature_id"])
+        relative_influence = (
+            abs(shap_value) / top_magnitude * 100
+            if index < EXPLANATION_DRIVER_LIMIT and top_magnitude > 0
+            else None
+        )
+        item = {
+            **feature,
+            "gene_symbol": gene_symbol,
+            "expression_level": _expression_level(float(feature["model_input_value"])),
+            "direction": direction,
+            "relative_influence_percent": relative_influence,
+        }
+        enriched.append(item)
+        if index < EXPLANATION_DRIVER_LIMIT and relative_influence is not None:
+            drivers.append(item)
+
+    summary_features = [feature for feature in drivers if feature["shap_value"] > 0][:2]
+    summary_toward_class = bool(summary_features)
+    if not summary_features:
+        summary_features = drivers[:2]
+    if summary_features:
+        descriptions = []
+        for feature in summary_features:
+            name = feature["gene_symbol"] or feature["feature_id"]
+            expression = feature["expression_level"]
+            if summary_toward_class:
+                effect = f"{expression} expression"
+            elif feature["direction"] == "away_from_explained_class":
+                effect = f"{expression} expression; SHAP contribution away from {explained_class_label}"
+            elif feature["direction"] == "toward_explained_class":
+                effect = f"toward {explained_class_label}"
+            elif feature["direction"] == "away_from_explained_class":
+                effect = f"away from {explained_class_label}"
+            else:
+                effect = "with no directional effect"
+            descriptions.append(f"{name} ({effect})")
+        if summary_toward_class:
+            summary = (
+                f"The model predicts {explained_class_label}. The strongest SHAP contributions "
+                f"toward this class came from {' and '.join(descriptions)}."
+            )
+        else:
+            summary = (
+                f"The model predicts {explained_class_label}. The largest returned SHAP "
+                f"contributions were {' and '.join(descriptions)}."
+            )
+    else:
+        if ordered and top_magnitude == 0:
+            summary = (
+                f"The model predicts {explained_class_label}, but all returned SHAP contributions "
+                "were zero, so no relative driver ranking is available."
+            )
+        else:
+            summary = (
+                f"The model predicts {explained_class_label}, but no valid SHAP drivers are available "
+                "to summarize for this sample."
+            )
+    return enriched, drivers, summary
+
+
+@app.get(
+    "/models/{model_name}/global-drivers",
+    response_model=GlobalDriversResponse,
+    response_model_exclude_none=True,
+)
+def global_drivers(model_name: str):
+    model_name = model_name.lower()
+    if model_name not in MODELS:
+        raise HTTPException(status_code=404, detail="Model not found")
+    model = MODELS[model_name]
+    _require_model_ready(model_name, model)
+    feature_ids = _feature_ids(model)
+    selected = np.asarray(getattr(model, "selected_genes", []), dtype=int)
+    get_importance = getattr(model, "get_feature_importance", None)
+    if feature_ids is None or not callable(get_importance):
+        raise HTTPException(status_code=503, detail="Global model importance is unavailable for this model.")
+    try:
+        importance = np.asarray(get_importance(), dtype=float)
+    except (AttributeError, TypeError, ValueError, FloatingPointError) as exc:
+        logger.exception("Global feature importance failed for %s", model_name)
+        raise HTTPException(status_code=503, detail="Global model importance is unavailable for this model.") from exc
+    if (
+        importance.shape != selected.shape
+        or not np.isfinite(importance).all()
+        or np.any(importance < 0)
+        or importance.sum() <= 0
+        or np.any(selected < 0)
+        or np.any(selected >= len(feature_ids))
+    ):
+        raise HTTPException(status_code=503, detail="Global model importance is invalid for this model.")
+
+    drivers = [
+        {
+            "feature_id": feature_ids[int(feature_index)],
+            "gene_symbol": GENE_SYMBOLS.get(feature_ids[int(feature_index)]),
+            "importance": float(score),
+        }
+        for feature_index, score in zip(selected, importance)
+    ]
+    drivers.sort(key=lambda driver: driver["importance"], reverse=True)
+    return {
+        "model_name": model_name,
+        "method": "weighted_tree_feature_importance",
+        "drivers": drivers[:EXPLANATION_DRIVER_LIMIT],
+    }
+
+
+@app.post(
+    "/predict/{model_name}",
+    response_model=PredictionResponse,
+    response_model_exclude_none=True,
+)
 def predict_json(model_name: str, request: PredictionRequest):
     model_name = model_name.lower()
     if model_name not in MODELS:
@@ -538,10 +758,15 @@ def predict_json(model_name: str, request: PredictionRequest):
         prediction=_normalize_class_label(predictions[0]),
         probability=float(np.max(proba)),
         class_probabilities={key: float(value) for key, value in zip(class_keys, proba)},
+        sample_id=request.sample_id,
     )
 
 
-@app.post("/explain/{model_name}", response_model=ExplanationResponse)
+@app.post(
+    "/explain/{model_name}",
+    response_model=ExplanationResponse,
+    response_model_exclude_none=True,
+)
 def explain_json(model_name: str, request: ExplanationRequest):
     model_name = model_name.lower()
     if model_name not in MODELS:
@@ -576,14 +801,19 @@ def explain_json(model_name: str, request: ExplanationRequest):
         logger.exception("Explanation failed for %s", model_name)
         raise HTTPException(status_code=500, detail="Explanation failed.") from exc
 
+    enriched_features, drivers, summary = _enrich_explanation_features(
+        result["features"],
+        _label_meanings(model_name, [explained_class]).get(explained_class, explained_class),
+    )
     return ExplanationResponse(
         model_name=model_name,
+        sample_id=request.sample_id,
         prediction=predicted_class,
         prediction_label=_label_meanings(model_name, [predicted_class]).get(predicted_class, predicted_class),
         explained_class=explained_class,
         explained_class_label=_label_meanings(model_name, [explained_class]).get(explained_class, explained_class),
         class_probabilities={key: float(value) for key, value in zip(class_keys, probabilities[0])},
-        **result,
+        **{**result, "features": enriched_features, "drivers": drivers, "summary": summary},
     )
 
 

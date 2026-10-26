@@ -1,11 +1,34 @@
 import { Info } from 'lucide-react'
 import { formatGeneCount } from '../interpret'
 
-export default function JsonTab({ value, onChange, onSubmit, loading, disabled, model }) {
+export default function JsonTab({
+  value,
+  onChange,
+  sampleId,
+  onSampleIdChange,
+  onSubmit,
+  loading,
+  disabled,
+  model,
+}) {
   const geneCount = formatGeneCount(model?.expected_genes)
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      <div>
+        <label htmlFor="sample-id" className="mb-2 block text-sm font-medium text-slate-800">
+          Sample ID <span className="font-normal text-slate-500">(optional)</span>
+        </label>
+        <input
+          id="sample-id"
+          type="text"
+          value={sampleId}
+          maxLength={128}
+          onChange={(event) => onSampleIdChange(event.target.value)}
+          placeholder="Enter a sample identifier"
+          className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100"
+        />
+      </div>
       <div>
         <label htmlFor="expression-json" className="mb-2 block text-sm font-medium text-slate-800">
           Gene/probe expression map

@@ -3,25 +3,22 @@ import { interpretClass, interpretPrediction, summarizeBatch } from '../interpre
 import ExplanationPanel from './ExplanationPanel'
 
 function formatPercent(value) {
+  if (value === null || value === undefined) return '—'
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return '—'
   return `${(numeric * 100).toFixed(1)}%`
 }
 
 function ProbabilityBar({ value }) {
-  const percent = Math.max(0, Math.min(100, Number(value) * 100 || 0))
+  const numeric = value === null || value === undefined ? Number.NaN : Number(value)
+  const percent = Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric * 100)) : 0
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-200">
-        <div
-          className="h-full rounded-full bg-blue-700 transition-all"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      <span className="w-14 shrink-0 text-right text-sm font-medium tabular-nums text-slate-700">
-        {formatPercent(value)}
-      </span>
+    <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
+      <div
+        className="h-full rounded-full bg-blue-700 transition-all"
+        style={{ width: `${percent}%` }}
+      />
     </div>
   )
 }
@@ -29,65 +26,78 @@ function ProbabilityBar({ value }) {
 function JsonResults({ result, model, onExplain, explaining, explanation, explanationError }) {
   const interpretation = interpretPrediction(result.prediction, model)
   const entries = Object.entries(result.class_probabilities || {})
+  const predictedProbabilityValue = result.class_probabilities?.[result.prediction]
+  const predictedProbability = predictedProbabilityValue == null
+    ? Number.NaN
+    : Number(predictedProbabilityValue)
+  const otherEntry = entries.find(([label]) => String(label) !== String(result.prediction))
+  const predictedProbabilityText = Number.isFinite(predictedProbability)
+    ? formatPercent(predictedProbability)
+    : result.probability == null || !Number.isFinite(Number(result.probability))
+      ? null
+      : formatPercent(result.probability)
+  const hasOtherProbability = otherEntry
+    && otherEntry[1] != null
+    && Number.isFinite(Number(otherEntry[1]))
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {interpretation.target}
-        </p>
-        <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-          {interpretation.classLabel}
-        </p>
-        {interpretation.raw && interpretation.raw !== interpretation.classLabel && (
-          <p className="mt-1 text-sm text-slate-500">
-            Model output: <span className="font-medium text-slate-700">{interpretation.raw}</span>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {interpretation.target}
           </p>
-        )}
-      </div>
-
-      {interpretation.summary && (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
-          {interpretation.summary}
-        </p>
-      )}
-
-      <div>
-        <p className="mb-2 text-sm font-medium text-slate-700">Confidence probability</p>
-        <ProbabilityBar value={result.probability} />
-      </div>
-
-      {entries.length > 0 && (
-        <div>
-          <p className="mb-3 text-sm font-medium text-slate-700">Class probabilities</p>
-          <ul className="space-y-3">
-            {entries.map(([label, value]) => (
-              <li key={label}>
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span
-                    className={
-                      String(label) === String(result.prediction)
-                        ? 'font-semibold text-blue-800'
-                        : 'text-slate-600'
-                    }
-                  >
-                    {interpretClass(label, model)}
-                  </span>
-                  <span className="tabular-nums text-slate-500">{formatPercent(value)}</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className={`h-full rounded-full ${
-                      String(label) === String(result.prediction) ? 'bg-blue-700' : 'bg-slate-400'
-                    }`}
-                    style={{ width: `${Math.max(0, Math.min(100, Number(value) * 100 || 0))}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
+            Predicted {interpretation.classLabel}
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            Sample ID: <span className="font-medium text-slate-800">{result.sample_id || 'Not provided'}</span>
+          </p>
+          <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
+            {predictedProbabilityText
+              ? `The model assigns a ${predictedProbabilityText} estimated probability to ${interpretation.classLabel}`
+              : `The model predicts ${interpretation.classLabel}, but its probability data is unavailable`}
+            {predictedProbabilityText && hasOtherProbability
+              ? ` and ${formatPercent(otherEntry[1])} to ${interpretClass(otherEntry[0], model)}.`
+              : predictedProbabilityText && otherEntry
+                ? ' The other class probability is unavailable.'
+                : '.'}{' '}
+            {predictedProbabilityText && 'These are model outputs, not clinical certainty.'}
+          </p>
         </div>
-      )}
+
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="mb-3 text-sm font-semibold text-slate-800">Class probabilities</p>
+          {entries.length > 0 ? (
+            <ul className="space-y-3">
+              {entries.map(([label, value]) => (
+                <li key={label}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                    <span
+                      className={
+                        String(label) === String(result.prediction)
+                          ? 'font-semibold text-blue-800'
+                          : 'text-slate-600'
+                      }
+                    >
+                      {interpretClass(label, model)}
+                      {String(label) === String(result.prediction) ? ' · predicted' : ''}
+                    </span>
+                    <span className="shrink-0 font-mono tabular-nums text-slate-700">
+                      {formatPercent(value)}
+                    </span>
+                  </div>
+                  {value !== null && value !== undefined && Number.isFinite(Number(value))
+                    ? <ProbabilityBar value={value} />
+                    : <p className="text-xs text-slate-500">Probability unavailable</p>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-500">Class probabilities are unavailable.</p>
+          )}
+        </div>
+      </div>
 
       <p className="text-xs text-slate-400">
         Research estimate only. Not a clinical diagnosis or treatment recommendation.
@@ -130,7 +140,7 @@ function JsonResults({ result, model, onExplain, explaining, explanation, explan
           </div>
         )}
 
-        {explanation && <ExplanationPanel explanation={explanation} />}
+        {explanation && <ExplanationPanel explanation={explanation} model={model} />}
       </div>
     </div>
   )

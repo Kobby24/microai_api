@@ -41,11 +41,16 @@ export function isExplanationForPrediction(explanation, model, prediction) {
     || explanation.features.length === 0
     || !explanation.metadata
     || !Array.isArray(model?.feature_ids)
+    || explanation.base_value == null
+    || explanation.predicted_output == null
   ) {
     return false
   }
 
-  const targetProbability = Number(prediction.class_probabilities?.[prediction.prediction])
+  const targetProbabilityValue = prediction.class_probabilities?.[prediction.prediction]
+  const targetProbability = targetProbabilityValue == null
+    ? Number.NaN
+    : Number(targetProbabilityValue)
   const explainedProbability = Number(explanation.predicted_output)
   if (
     !Number.isFinite(targetProbability)
@@ -62,6 +67,9 @@ export function isExplanationForPrediction(explanation, model, prediction) {
       typeof feature?.feature_id !== 'string'
       || !model.feature_ids?.includes(feature.feature_id)
       || featureIds.has(feature.feature_id)
+      || feature.raw_input_value == null
+      || feature.model_input_value == null
+      || feature.shap_value == null
       || !Number.isFinite(Number(feature.raw_input_value))
       || !Number.isFinite(Number(feature.model_input_value))
       || !Number.isFinite(Number(feature.shap_value))
@@ -75,7 +83,11 @@ export function isExplanationForPrediction(explanation, model, prediction) {
   const responseProbabilities = explanation.class_probabilities || {}
   const predictionProbabilities = prediction.class_probabilities || {}
   const probabilitiesMatch = Object.entries(predictionProbabilities).every(
-    ([classKey, value]) => Math.abs(Number(responseProbabilities[classKey]) - Number(value)) <= 1e-8,
+    ([classKey, value]) => responseProbabilities[classKey] != null
+      && value != null
+      && Number.isFinite(Number(responseProbabilities[classKey]))
+      && Number.isFinite(Number(value))
+      && Math.abs(Number(responseProbabilities[classKey]) - Number(value)) <= 1e-8,
   )
   const reportedResidual = Number(metadata.additivity_residual)
   const calculatedResidual = Number(explanation.base_value)
@@ -90,7 +102,9 @@ export function isExplanationForPrediction(explanation, model, prediction) {
     && metadata.background_samples > 0
     && Number.isInteger(metadata.max_evals)
     && metadata.max_evals > 0
+    && metadata.additivity_residual != null
     && Number.isFinite(Number(metadata.additivity_residual))
+    && metadata.additivity_tolerance != null
     && Number.isFinite(Number(metadata.additivity_tolerance))
     && typeof metadata.preprocessing_scope_note === 'string'
   )
