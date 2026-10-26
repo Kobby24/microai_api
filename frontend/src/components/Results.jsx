@@ -23,7 +23,7 @@ function ProbabilityBar({ value }) {
   )
 }
 
-function JsonResults({ result, model, onExplain, explaining, explanation, explanationError }) {
+function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, explanation, explanationError }) {
   const interpretation = interpretPrediction(result.prediction, model)
   const entries = Object.entries(result.class_probabilities || {})
   const predictedProbabilityValue = result.class_probabilities?.[result.prediction]
@@ -107,7 +107,7 @@ function JsonResults({ result, model, onExplain, explaining, explanation, explan
         {!explanation && !explanationError && (
           <button
             type="button"
-            onClick={onExplain}
+            onClick={onOpenExplanation || onExplain}
             disabled={explaining || !model?.ready}
             className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -260,6 +260,7 @@ function CsvResults({
   model,
   selectedRow,
   onExplain,
+  onOpenExplanation,
   onCloseExplanation,
   explaining,
   explanation,
@@ -350,7 +351,7 @@ function CsvResults({
                   <td className="px-4 py-2.5">
                     <button
                       type="button"
-                      onClick={() => onExplain(row)}
+                      onClick={() => (onOpenExplanation || onExplain)(row)}
                       aria-label={`View explanation for ${row.sample_id || `Sample ${row.sample_index}`}`}
                       className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-800 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     >
@@ -373,6 +374,8 @@ export default function Results({
   csvResult,
   model,
   onExplain,
+  onOpenExplanation,
+  onOpenBatchExplanation,
   explaining = false,
   explanation,
   explanationError,
@@ -401,6 +404,7 @@ export default function Results({
           result={jsonResult}
           model={model}
           onExplain={onExplain}
+          onOpenExplanation={onOpenExplanation}
           explaining={explaining}
           explanation={explanation}
           explanationError={explanationError}
@@ -412,6 +416,7 @@ export default function Results({
           model={model}
           selectedRow={selectedBatchRow}
           onExplain={onExplainBatch}
+          onOpenExplanation={onOpenBatchExplanation}
           onCloseExplanation={onCloseBatchExplanation}
           explaining={explaining}
           explanation={explanation}
