@@ -24,6 +24,8 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [workflowStep, setWorkflowStep] = useState('start')
+  const [pendingMode, setPendingMode] = useState(null)
   const [jsonResult, setJsonResult] = useState(null)
   const [csvResult, setCsvResult] = useState(null)
   const [jsonRequest, setJsonRequest] = useState(null)
@@ -103,8 +105,19 @@ export default function App() {
     batchRequestKeyRef.current = null
   }
 
-  async function handleJsonSubmit(event) {
+  function handleJsonSubmit(event) {
     event.preventDefault()
+    setError('')
+    if (!selectedModel) {
+      setError('Choose a model before reviewing the analysis.')
+      setWorkflowStep('model')
+      return
+    }
+    setPendingMode('json')
+    setWorkflowStep('review')
+  }
+
+  async function runJsonPrediction() {
     setError('')
     setJsonResult(null)
     setCsvResult(null)
@@ -129,8 +142,23 @@ export default function App() {
     }
   }
 
-  async function handleCsvSubmit(event) {
+  function handleCsvSubmit(event) {
     event.preventDefault()
+    setError('')
+    if (!selectedModel) {
+      setError('Choose a model before reviewing the analysis.')
+      setWorkflowStep('model')
+      return
+    }
+    if (!csvFile) {
+      setError('Upload a .csv or .tsv file before reviewing the analysis.')
+      return
+    }
+    setPendingMode('csv')
+    setWorkflowStep('review')
+  }
+
+  async function runCsvPrediction() {
     setError('')
     setJsonResult(null)
     setCsvResult(null)
@@ -323,6 +351,24 @@ export default function App() {
     setJsonRequest(null)
     resetExplanation()
     setError('')
+    setPendingMode(null)
+    setWorkflowStep(name ? 'input' : 'model')
+  }
+
+  function handleStart() {
+    setWorkflowStep(selectedModel ? 'input' : 'model')
+  }
+
+  function handleBackToInput() {
+    setPendingMode(null)
+    setWorkflowStep('input')
+  }
+
+  async function handleRunAnalysis() {
+    if (pendingMode === 'json') await runJsonPrediction()
+    if (pendingMode === 'csv') await runCsvPrediction()
+    setPendingMode(null)
+    setWorkflowStep('results')
   }
 
   const selectedMeta = models.find((model) => model.name === selectedModel) || null
@@ -333,78 +379,129 @@ export default function App() {
   ]
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Header apiStatus={apiStatus} />
+    <div className="min-h-screen bg-[#f4f7f8]">
+      <Header apiStatus={apiStatus} model={selectedMeta} workflowStep={workflowStep} />
 
-      <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
-        <ModelSelector
-          models={models}
-          selectedModel={selectedModel}
-          onChange={handleModelChange}
-          loading={modelsLoading}
-          disabled={models.length === 0}
-        />
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:py-10">
+        {workflowStep === 'start' && (
+          <section className="grid items-end gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16">
+            <div className="max-w-2xl">
+              <p className="eyebrow">Research analysis workspace</p>
+              <h2 className="mt-4 max-w-xl font-display text-4xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-5xl">
+                Gene expression analysis, made inspectable.
+              </h2>
+              <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
+                MicroAI helps research teams run supported model predictions, review class probabilities, and investigate the features influencing each result.
+              </p>
+              <button
+                type="button"
+                onClick={handleStart}
+                className="mt-8 inline-flex items-center rounded-md bg-[#123b5d] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0d2f4b] focus:outline-none focus:ring-2 focus:ring-[#123b5d]/30"
+              >
+                Start analysis
+              </button>
+              <p className="mt-4 text-xs text-slate-500">Decision support for research use. Not a standalone clinical diagnosis.</p>
+            </div>
+            <div className="border-l border-slate-300 pl-6 lg:mb-2">
+              <p className="text-sm font-semibold text-slate-900">A focused workflow</p>
+              <ol className="mt-5 space-y-5">
+                {['Choose a validated model', 'Provide a single sample or batch file', 'Review the model output and its drivers'].map((item, index) => (
+                  <li key={item} className="flex gap-4">
+                    <span className="font-mono text-xs font-semibold text-[#2f7b78]">0{index + 1}</span>
+                    <span className="text-sm leading-6 text-slate-600">{item}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </section>
+        )}
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-5 flex border-b border-slate-200">
-            {tabs.map(({ id, label, icon: Icon }) => {
-              const selected = activeTab === id
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setActiveTab(id)}
-                  className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition ${
-                    selected
-                      ? 'border-blue-700 text-blue-800'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </button>
-              )
-            })}
+        {workflowStep !== 'start' && workflowStep !== 'results' && (
+          <div className="space-y-8">
+            <div>
+              <p className="eyebrow">New analysis</p>
+              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Prepare your analysis</h2>
+              <p className="mt-2 text-sm text-slate-600">Choose the model and data representation that match your research question.</p>
+            </div>
+            <div className="workflow-track" aria-label="Analysis workflow">
+              {['Model', 'Data', 'Review', 'Results'].map((label, index) => {
+                const step = ['model', 'input', 'review', 'results'][index]
+                const active = step === workflowStep || (workflowStep === 'input' && step === 'model')
+                return <span key={label} className={active ? 'workflow-step workflow-step-active' : 'workflow-step'}><b>0{index + 1}</b>{label}</span>
+              })}
+            </div>
+
+            {(workflowStep === 'model' || workflowStep === 'input' || workflowStep === 'review') && (
+              <ModelSelector
+                models={models}
+                selectedModel={selectedModel}
+                onChange={handleModelChange}
+                loading={modelsLoading}
+                disabled={models.length === 0}
+              />
+            )}
+
+            {workflowStep === 'input' && selectedMeta && (
+              <section className="surface-panel p-6">
+                <div className="mb-6 flex items-end justify-between gap-4 border-b border-slate-200 pb-5">
+                  <div>
+                    <p className="eyebrow">02 / Provide data</p>
+                    <h3 className="mt-2 text-xl font-semibold text-slate-950">How would you like to analyze your data?</h3>
+                  </div>
+                  <p className="hidden text-right text-xs text-slate-500 sm:block">Model: {selectedMeta.display_name || selectedMeta.name}</p>
+                </div>
+                <div className="flex border-b border-slate-200">
+                  {tabs.map(({ id, label, icon: Icon }) => (
+                    <button key={id} type="button" onClick={() => setActiveTab(id)} className={`-mb-px inline-flex items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition ${activeTab === id ? 'border-[#2f7b78] text-[#1f5f5c]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                      <Icon className="h-4 w-4" />{label}
+                    </button>
+                  ))}
+                </div>
+                <div className="pt-6">
+                  {activeTab === 'json' ? <JsonTab value={jsonInput} onChange={handleJsonInputChange} sampleId={sampleId} onSampleIdChange={handleSampleIdChange} onSubmit={handleJsonSubmit} loading={loading} disabled={loading || !selectedMeta?.ready} model={selectedMeta} /> : <CsvTab file={csvFile} onFileChange={handleCsvFileChange} isDragging={isDragging} onDragState={setIsDragging} onSubmit={handleCsvSubmit} loading={loading} disabled={loading || !selectedMeta?.ready} model={selectedMeta} />}
+                </div>
+              </section>
+            )}
+
+            {workflowStep === 'review' && (
+              <section className="surface-panel p-6" aria-labelledby="review-heading">
+                <p className="eyebrow">03 / Review analysis</p>
+                <h3 id="review-heading" className="mt-2 text-2xl font-semibold text-slate-950">Ready to run?</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Confirm the model and input below. MicroAI will validate the feature representation before returning a prediction.</p>
+                <dl className="mt-6 grid gap-4 border-y border-slate-200 py-5 sm:grid-cols-3">
+                  <div><dt className="meta-label">Model</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{selectedMeta?.display_name || selectedModel}</dd></div>
+                  <div><dt className="meta-label">Input</dt><dd className="mt-1 truncate text-sm font-semibold text-slate-900">{pendingMode === 'csv' ? csvFile?.name : sampleId || 'Single sample'}</dd></div>
+                  <div><dt className="meta-label">Mode</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{pendingMode === 'csv' ? 'Multiple samples' : 'Single sample'}</dd></div>
+                </dl>
+                <div className="flex flex-wrap gap-3 pt-5">
+                  <button type="button" onClick={handleBackToInput} className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Back</button>
+                  <button type="button" onClick={handleRunAnalysis} className="rounded-md bg-[#123b5d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0d2f4b]">Run analysis</button>
+                </div>
+              </section>
+            )}
           </div>
-
-          {activeTab === 'json' ? (
-            <JsonTab
-              value={jsonInput}
-              onChange={handleJsonInputChange}
-              sampleId={sampleId}
-              onSampleIdChange={handleSampleIdChange}
-              onSubmit={handleJsonSubmit}
-              loading={loading}
-              disabled={loading || !selectedMeta?.ready}
-              model={selectedMeta}
-            />
-          ) : (
-            <CsvTab
-              file={csvFile}
-              onFileChange={handleCsvFileChange}
-              isDragging={isDragging}
-              onDragState={setIsDragging}
-              onSubmit={handleCsvSubmit}
-              loading={loading}
-              disabled={loading || !selectedMeta?.ready}
-              model={selectedMeta}
-            />
-          )}
-        </section>
+        )}
 
         <ErrorBanner message={error} />
-        <Results
-          jsonResult={jsonResult}
-          csvResult={csvResult}
-          model={selectedMeta}
-          onExplain={handleExplain}
-          explaining={explanationState.status === 'loading'}
-          explanation={explanationState.result}
-          explanationError={explanationState.error}
-          selectedBatchRow={selectedBatchRow}
-          onExplainBatch={handleBatchExplain}
-          onCloseBatchExplanation={handleCloseBatchExplanation}
-        />
+
+        {loading && (
+          <section className="surface-panel mt-8 p-6" aria-live="polite">
+            <p className="eyebrow">04 / Analyze</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-950">Analyzing your sample data</h2>
+            <p className="mt-2 text-sm text-slate-600">MicroAI is validating the input and running the selected model. This may take a few seconds.</p>
+            <div className="mt-5 h-1.5 overflow-hidden bg-slate-100"><div className="h-full w-1/2 animate-pulse bg-[#2f7b78]" /></div>
+          </section>
+        )}
+
+        {(workflowStep === 'results' || jsonResult || csvResult) && !loading && (
+          <div className="mt-8">
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+              <div><p className="eyebrow">05 / Analysis results</p><h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Review model outputs</h2></div>
+              <button type="button" onClick={() => { setWorkflowStep('input'); setJsonResult(null); setCsvResult(null); resetBatchSelection(); resetExplanation() }} className="text-sm font-semibold text-[#1f5f5c] hover:underline">Start another analysis</button>
+            </div>
+            <Results jsonResult={jsonResult} csvResult={csvResult} model={selectedMeta} onExplain={handleExplain} explaining={explanationState.status === 'loading'} explanation={explanationState.result} explanationError={explanationState.error} selectedBatchRow={selectedBatchRow} onExplainBatch={handleBatchExplain} onCloseBatchExplanation={handleCloseBatchExplanation} />
+          </div>
+        )}
       </main>
     </div>
   )
