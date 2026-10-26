@@ -85,3 +85,138 @@ body {
   border-color: #2f7b78;
   color: #1f5f5c;
 }
+
+.dialog-backdrop {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.48);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 50;
+}
+
+.dialog-panel,
+.loading-panel {
+  animation: dialog-enter 160ms ease-out;
+  border: 1px solid #dce5e7;
+  border-radius: 0.625rem;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+  max-height: calc(100vh - 2rem);
+  max-width: 34rem;
+  overflow: auto;
+  width: 100%;
+}
+
+.dialog-panel {
+  background: #ffffff;
+}
+
+.loading-panel {
+  background: #ffffff;
+  padding: 2rem;
+  text-align: center;
+}
+
+.icon-button {
+  align-items: center;
+  border-radius: 0.375rem;
+  color: #64748b;
+  display: inline-flex;
+  justify-content: center;
+  padding: 0.4rem;
+}
+
+.icon-button:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.primary-button,
+.secondary-button {
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.primary-button {
+  background: #123b5d;
+  color: #ffffff;
+}
+
+.primary-button:hover {
+  background: #0d2f4b;
+}
+
+.secondary-button {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+.secondary-button:hover {
+  background: #f8fafc;
+}
+
+.loading-orbit {
+  align-items: center;
+  background: #e6eeee;
+  border-radius: 999px;
+  display: inline-flex;
+  height: 4.5rem;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  width: 4.5rem;
+}
+
+.indeterminate-bar {
+  background: #e6eeee;
+  height: 0.4rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.indeterminate-bar span {
+  animation: loading-sweep 1.4s ease-in-out infinite;
+  background: #2f7b78;
+  height: 100%;
+  left: -35%;
+  position: absolute;
+  width: 35%;
+}
+
+@keyframes dialog-enter {
+  from { opacity: 0; transform: translateY(0.5rem) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes loading-sweep {
+  from { transform: translateX(0); }
+  to { transform: translateX(385%); }
+}
+
+button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgba(47, 123, 120, 0.35);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .dialog-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dialog-panel,
+  .loading-panel {
+    border-radius: 0.75rem 0.75rem 0 0;
+    max-height: 90vh;
+  }
+
+  .loading-panel {
+    padding: 1.5rem;
+  }
+}

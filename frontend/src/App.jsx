@@ -7,6 +7,9 @@ import ErrorBanner from './components/ErrorBanner'
 import JsonTab from './components/JsonTab'
 import CsvTab from './components/CsvTab'
 import Results from './components/Results'
+import AnalysisReviewDialog from './components/AnalysisReviewDialog'
+import AnalysisLoadingOverlay from './components/AnalysisLoadingOverlay'
+import PredictionExplanationPage from './components/PredictionExplanationPage'
 import { batchSamplePayload, parseBatchExpressionText } from './batchFile'
 import { parseExpressionInput } from './expressionInput'
 import { canStartExplanation, explanationReducer, initialExplanationState } from './explanationState'
@@ -26,6 +29,9 @@ export default function App() {
   const [error, setError] = useState('')
   const [workflowStep, setWorkflowStep] = useState('start')
   const [pendingMode, setPendingMode] = useState(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [explanationView, setExplanationView] = useState(false)
+  const [explanationTarget, setExplanationTarget] = useState(null)
   const [jsonResult, setJsonResult] = useState(null)
   const [csvResult, setCsvResult] = useState(null)
   const [jsonRequest, setJsonRequest] = useState(null)
@@ -113,8 +119,15 @@ export default function App() {
       setWorkflowStep('model')
       return
     }
+    try {
+      if (!selectedMeta?.ready) throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for safe prediction.')
+      parseExpressionInput(jsonInput, selectedMeta.feature_ids)
+    } catch (validationError) {
+      setError(validationError.message)
+      return
+    }
     setPendingMode('json')
-    setWorkflowStep('review')
+    setReviewOpen(true)
   }
 
   async function runJsonPrediction() {
@@ -135,8 +148,10 @@ export default function App() {
       const result = await predictJson(selectedModel, input.expression, input.featureIds, sampleId)
       setJsonResult(result)
       setJsonRequest({ ...input, sampleId: sampleId.trim() })
+      return true
     } catch (err) {
       setError(err.response || err.request ? extractApiError(err) : err.message)
+      return false
     } finally {
       setLoading(false)
     }
@@ -155,7 +170,7 @@ export default function App() {
       return
     }
     setPendingMode('csv')
-    setWorkflowStep('review')
+    setReviewOpen(true)
   }
 
   async function runCsvPrediction() {
@@ -178,8 +193,10 @@ export default function App() {
       setLoading(true)
       const result = await predictCsv(selectedModel, csvFile)
       setCsvResult(result)
+      return true
     } catch (err) {
       setError(err.response || err.request ? extractApiError(err) : err.message)
+      return false
     } finally {
       setLoading(false)
     }
@@ -361,14 +378,36 @@ export default function App() {
 
   function handleBackToInput() {
     setPendingMode(null)
+    setReviewOpen(false)
     setWorkflowStep('input')
   }
 
   async function handleRunAnalysis() {
-    if (pendingMode === 'json') await runJsonPrediction()
-    if (pendingMode === 'csv') await runCsvPrediction()
+    const mode = pendingMode
+    setReviewOpen(false)
+    setWorkflowStep('analyzing')
+    const success = mode === 'json' ? await runJsonPrediction() : await runCsvPrediction()
     setPendingMode(null)
-    setWorkflowStep('results')
+    setWorkflowStep(success ? 'results' : 'input')
+  }
+
+  function openSingleExplanation() {
+    setExplanationTarget(jsonResult)
+    setExplanationView(true)
+    handleExplain()
+  }
+
+  function openBatchExplanation(row) {
+    setExplanationTarget(row)
+    setExplanationView(true)
+    handleBatchExplain(row)
+  }
+
+  function closeExplanationView() {
+    setExplanationView(false)
+    setExplanationTarget(null)
+    setSelectedBatchRow(null)
+    resetExplanation()
   }
 
   const selectedMeta = models.find((model) => model.name === selectedModel) || null
@@ -416,7 +455,7 @@ export default function App() {
           </section>
         )}
 
-        {workflowStep !== 'start' && workflowStep !== 'results' && (
+        {workflowStep !== 'start' && workflowStep !== 'results' && workflowStep !== 'analyzing' && !explanationView && (
           <div className="space-y-8">
             <div>
               <p className="eyebrow">New analysis</p>
@@ -424,14 +463,14 @@ export default function App() {
               <p className="mt-2 text-sm text-slate-600">Choose the model and data representation that match your research question.</p>
             </div>
             <div className="workflow-track" aria-label="Analysis workflow">
-              {['Model', 'Data', 'Review', 'Results'].map((label, index) => {
-                const step = ['model', 'input', 'review', 'results'][index]
+              {['Model', 'Data', 'Results'].map((label, index) => {
+                const step = ['model', 'input', 'results'][index]
                 const active = step === workflowStep || (workflowStep === 'input' && step === 'model')
                 return <span key={label} className={active ? 'workflow-step workflow-step-active' : 'workflow-step'}><b>0{index + 1}</b>{label}</span>
               })}
             </div>
 
-            {(workflowStep === 'model' || workflowStep === 'input' || workflowStep === 'review') && (
+            {(workflowStep === 'model' || workflowStep === 'input') && (
               <ModelSelector
                 models={models}
                 selectedModel={selectedModel}
@@ -463,46 +502,35 @@ export default function App() {
               </section>
             )}
 
-            {workflowStep === 'review' && (
-              <section className="surface-panel p-6" aria-labelledby="review-heading">
-                <p className="eyebrow">03 / Review analysis</p>
-                <h3 id="review-heading" className="mt-2 text-2xl font-semibold text-slate-950">Ready to run?</h3>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Confirm the model and input below. MicroAI will validate the feature representation before returning a prediction.</p>
-                <dl className="mt-6 grid gap-4 border-y border-slate-200 py-5 sm:grid-cols-3">
-                  <div><dt className="meta-label">Model</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{selectedMeta?.display_name || selectedModel}</dd></div>
-                  <div><dt className="meta-label">Input</dt><dd className="mt-1 truncate text-sm font-semibold text-slate-900">{pendingMode === 'csv' ? csvFile?.name : sampleId || 'Single sample'}</dd></div>
-                  <div><dt className="meta-label">Mode</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{pendingMode === 'csv' ? 'Multiple samples' : 'Single sample'}</dd></div>
-                </dl>
-                <div className="flex flex-wrap gap-3 pt-5">
-                  <button type="button" onClick={handleBackToInput} className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Back</button>
-                  <button type="button" onClick={handleRunAnalysis} className="rounded-md bg-[#123b5d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0d2f4b]">Run analysis</button>
-                </div>
-              </section>
-            )}
           </div>
         )}
 
         <ErrorBanner message={error} />
 
-        {loading && (
-          <section className="surface-panel mt-8 p-6" aria-live="polite">
-            <p className="eyebrow">04 / Analyze</p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-950">Analyzing your sample data</h2>
-            <p className="mt-2 text-sm text-slate-600">MicroAI is validating the input and running the selected model. This may take a few seconds.</p>
-            <div className="mt-5 h-1.5 overflow-hidden bg-slate-100"><div className="h-full w-1/2 animate-pulse bg-[#2f7b78]" /></div>
-          </section>
+        {explanationView && (
+          <PredictionExplanationPage
+            prediction={explanationTarget}
+            model={selectedMeta}
+            explanation={explanationState.result}
+            loading={explanationState.status === 'loading'}
+            error={explanationState.error}
+            onRetry={explanationTarget?.sample_index != null ? () => handleBatchExplain(explanationTarget) : handleExplain}
+            onBack={closeExplanationView}
+          />
         )}
 
-        {(workflowStep === 'results' || jsonResult || csvResult) && !loading && (
+        {(workflowStep === 'results' || jsonResult || csvResult) && !loading && !explanationView && (
           <div className="mt-8">
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
               <div><p className="eyebrow">05 / Analysis results</p><h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Review model outputs</h2></div>
               <button type="button" onClick={() => { setWorkflowStep('input'); setJsonResult(null); setCsvResult(null); resetBatchSelection(); resetExplanation() }} className="text-sm font-semibold text-[#1f5f5c] hover:underline">Start another analysis</button>
             </div>
-            <Results jsonResult={jsonResult} csvResult={csvResult} model={selectedMeta} onExplain={handleExplain} explaining={explanationState.status === 'loading'} explanation={explanationState.result} explanationError={explanationState.error} selectedBatchRow={selectedBatchRow} onExplainBatch={handleBatchExplain} onCloseBatchExplanation={handleCloseBatchExplanation} />
+            <Results jsonResult={jsonResult} csvResult={csvResult} model={selectedMeta} onExplain={handleExplain} onOpenExplanation={openSingleExplanation} onOpenBatchExplanation={openBatchExplanation} explaining={explanationState.status === 'loading'} explanation={explanationState.result} explanationError={explanationState.error} selectedBatchRow={selectedBatchRow} onExplainBatch={handleBatchExplain} onCloseBatchExplanation={handleCloseBatchExplanation} />
           </div>
         )}
       </main>
+      {reviewOpen && <AnalysisReviewDialog model={selectedMeta} mode={pendingMode} file={csvFile} sampleId={sampleId} onCancel={handleBackToInput} onConfirm={handleRunAnalysis} />}
+      {loading && <AnalysisLoadingOverlay mode={pendingMode} />}
     </div>
   )
 }

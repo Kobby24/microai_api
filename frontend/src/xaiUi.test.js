@@ -71,6 +71,9 @@ const explanation = {
 
 let vite
 let Results
+let AnalysisReviewDialog
+let AnalysisLoadingOverlay
+let PredictionExplanationPage
 
 before(async () => {
   vite = await createServer({
@@ -80,6 +83,9 @@ before(async () => {
     appType: 'custom',
   })
   Results = (await vite.ssrLoadModule('/src/components/Results.jsx')).default
+  AnalysisReviewDialog = (await vite.ssrLoadModule('/src/components/AnalysisReviewDialog.jsx')).default
+  AnalysisLoadingOverlay = (await vite.ssrLoadModule('/src/components/AnalysisLoadingOverlay.jsx')).default
+  PredictionExplanationPage = (await vite.ssrLoadModule('/src/components/PredictionExplanationPage.jsx')).default
 })
 
 after(async () => {
@@ -254,5 +260,67 @@ describe('SHAP explanation UI', () => {
     assert.match(errorMarkup, /Explanation unavailable/)
     assert.match(errorMarkup, /Source mapping unavailable/)
     assert.match(errorMarkup, /Try again/)
+  })
+})
+
+describe('analysis workflow surfaces', () => {
+  it('renders review metadata without exposing the full input', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(AnalysisReviewDialog, {
+        model,
+        mode: 'csv',
+        file: { name: 'patients.csv' },
+        onCancel: () => {},
+        onConfirm: () => {},
+      }),
+    )
+    assert.match(markup, /Ready to run\?/) 
+    assert.match(markup, /patients\.csv/)
+    assert.match(markup, /Data format/) 
+    assert.match(markup, /Run analysis/)
+    assert.doesNotMatch(markup, /expression map|feature_id/) 
+  })
+
+  it('renders truthful indeterminate analysis progress', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(AnalysisLoadingOverlay, { mode: 'json' }),
+    )
+    assert.match(markup, /Analyzing your data/)
+    assert.match(markup, /Input validation/)
+    assert.match(markup, /Running model prediction/)
+    assert.match(markup, /indeterminate-bar/)
+    assert.doesNotMatch(markup, /10%|50%|100%/)
+  })
+
+  it('renders the dedicated explanation page and preserves an unavailable state', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(PredictionExplanationPage, {
+        prediction,
+        model,
+        explanation: null,
+        loading: true,
+        error: '',
+        onRetry: () => {},
+        onBack: () => {},
+      }),
+    )
+    assert.match(markup, /Prediction explanation/)
+    assert.match(markup, /sample-001/)
+    assert.match(markup, /Class probabilities/)
+    assert.match(markup, /Preparing explanation/)
+
+    const unavailable = renderToStaticMarkup(
+      React.createElement(PredictionExplanationPage, {
+        prediction: null,
+        model,
+        explanation: null,
+        loading: false,
+        error: '',
+        onRetry: () => {},
+        onBack: () => {},
+      }),
+    )
+    assert.match(unavailable, /Explanation unavailable/)
+    assert.match(unavailable, /Return to analysis/)
   })
 })

@@ -39,7 +39,7 @@ export default function Header({ apiStatus, model, workflowStep }) {
           </span>
         </div>
       </div>
-      {workflowStep && workflowStep !== 'start' && <div className="h-0.5 bg-[#e6eeee]"><div className="h-full bg-[#2f7b78] transition-all" style={{ width: `${({ model: 25, input: 50, review: 75, results: 100 })[workflowStep] || 0}%` }} /></div>}
+      {workflowStep && workflowStep !== 'start' && <div className="h-0.5 bg-[#e6eeee]"><div className="h-full bg-[#2f7b78] transition-all" style={{ width: `${({ model: 25, input: 50, analyzing: 82, results: 100 })[workflowStep] || 0}%` }} /></div>}
     </header>
   )
 }
