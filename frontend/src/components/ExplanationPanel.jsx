@@ -61,56 +61,53 @@ function buildSummary(explanation, drivers) {
 function DriverRow({ feature, maxAbs, explainedClassLabel, otherClassLabel, positiveSide }) {
   const value = Number(feature.shap_value)
   const towardExplained = value > 0
-  const towardClass0 = towardExplained ? positiveSide === 'left' : positiveSide !== 'left'
-  const side = towardClass0 ? 'left' : 'right'
+  const side = towardExplained
+    ? positiveSide === 'left' ? 'left' : 'right'
+    : positiveSide === 'left' ? 'right' : 'left'
   const width = `${contributionWidth(value, maxAbs)}%`
   const level = feature.expression_level || expressionLevel(feature.model_input_value)
   const direction = directionLabel(value, explainedClassLabel, otherClassLabel)
 
   return (
-    <li className="grid gap-3 border-b border-slate-100 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,1.2fr)_minmax(8rem,0.8fr)] sm:items-center sm:gap-5">
-      <div className="min-w-0">
+    <li className="grid grid-cols-[minmax(7rem,0.9fr)_minmax(8rem,1.7fr)_minmax(7rem,0.9fr)] items-center gap-2 border-b border-slate-100 py-3 last:border-b-0 sm:gap-4">
+      <div className={`min-w-0 ${side === 'left' ? 'order-1 text-right' : 'order-3 text-left'}`}>
         <p className="truncate text-sm font-semibold text-slate-900" title={driverName(feature)}>
           {driverName(feature)}
         </p>
         {feature.gene_symbol && (
-          <p className="mt-0.5 truncate font-mono text-xs text-slate-500" title={feature.feature_id}>
+          <p className="truncate font-mono text-[11px] text-slate-500" title={feature.feature_id}>
             {feature.feature_id}
           </p>
         )}
-        <p className="mt-1 text-xs text-slate-600">{level}</p>
+        <p className="mt-1 text-[11px] text-slate-600">{level}</p>
       </div>
 
-      <div className="min-w-0">
+      <div className="order-2 min-w-0">
         <div
-          className="grid h-6 grid-cols-[1fr_2px_1fr] items-center"
+          className="grid h-5 grid-cols-[1fr_2px_1fr] items-center"
           role="img"
           aria-label={`${direction}, SHAP contribution ${value > 0 ? '+' : ''}${formatValue(value)}`}
         >
           <div className="flex h-full items-center justify-end border-r border-slate-400">
             {side === 'left' && (
-              <div className="h-3 rounded-l-sm bg-indigo-600" style={{ width }} />
+              <div className="h-3 rounded-l-sm bg-[#2f7b78]" style={{ width }} />
             )}
           </div>
           <div className="h-full bg-slate-400" />
           <div className="flex h-full items-center border-l border-slate-400">
             {side === 'right' && (
-              <div className="h-3 rounded-r-sm bg-blue-700" style={{ width }} />
+              <div className="h-3 rounded-r-sm bg-[#c56b36]" style={{ width }} />
             )}
           </div>
         </div>
-        <div className="mt-1 flex justify-between gap-2 text-[10px] leading-tight text-slate-500">
-          <span className="min-w-0 truncate">Toward {otherClassLabel || 'other class'}</span>
-          <span className="min-w-0 truncate text-right">Toward {explainedClassLabel}</span>
-        </div>
+        <p className="mt-1 text-center text-[10px] text-slate-500">
+          {formatPercent(feature.relative_influence_percent)} relative influence
+        </p>
       </div>
 
-      <div className="flex items-center justify-between gap-3 text-xs sm:block sm:text-right">
-        <span className="font-medium text-slate-700">{direction}</span>
-        <span className="block font-mono tabular-nums text-slate-600">
-          {formatPercent(feature.relative_influence_percent)} relative influence
-        </span>
-      </div>
+      <p className={`order-4 col-span-3 text-center text-[11px] text-slate-500 sm:col-span-1 ${side === 'left' ? 'sm:text-left' : 'sm:text-right'}`}>
+        {direction}
+      </p>
     </li>
   )
 }
@@ -229,6 +226,7 @@ function GlobalDriversSection({ model }) {
 }
 
 export default function ExplanationPanel({ explanation, model }) {
+  const [showAllDrivers, setShowAllDrivers] = useState(false)
   const selected = selectContributors(explanation.features, 8)
   const returnedDrivers = Array.isArray(explanation.drivers)
     ? explanation.drivers
@@ -268,125 +266,94 @@ export default function ExplanationPanel({ explanation, model }) {
   const additivityPassed = additivityAvailable
     && explanation.metadata.additivity_verified
     && Math.abs(Number(residualValue)) <= Number(toleranceValue)
+  const visibleDrivers = showAllDrivers ? drivers : drivers.slice(0, 5)
+  const hiddenDriverCount = Math.max(0, drivers.length - visibleDrivers.length)
+  const explainedLabel = explanation.explained_class_label
+  const otherLabel = otherClassLabel || 'other class'
+  const leftLabel = positiveSide === 'left' ? explainedLabel : otherLabel
+  const rightLabel = positiveSide === 'right' ? explainedLabel : otherLabel
 
   return (
-    <section className="mt-6 border-t border-slate-200 pt-5" aria-labelledby="explanation-heading">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 id="explanation-heading" className="text-base font-semibold text-slate-900">
+    <section className="mt-7 border-t border-slate-200 pt-7" aria-labelledby="explanation-heading">
+      <div className="max-w-2xl">
+        <p className="eyebrow">Why this prediction?</p>
+        <h3 id="explanation-heading" className="mt-2 font-display text-2xl font-semibold text-slate-950">
           Why did the model make this prediction?
         </h3>
-        <p className="text-xs text-slate-500">
+        <p className="mt-2 text-xs text-slate-500">
           {explanation.model_name.toUpperCase()} · {explanation.metadata.method.replaceAll('_', ' ')}
         </p>
+        <p className="mt-3 text-base leading-7 text-slate-700">{buildSummary(explanation, drivers)}</p>
       </div>
 
-      <p className="mt-2 text-sm font-medium text-slate-700">
-        Explanation for {explanation.explained_class_label}
-      </p>
-      <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
-        {buildSummary(explanation, drivers)}
-      </p>
-      <p className="mt-3 text-xs leading-relaxed text-slate-600">
-        These features show which measurements influenced the model&apos;s prediction for this
-        sample. They describe model behavior and do not establish biological causation. Interpret
-        this explanation as model evidence, not as an independent clinical diagnosis.
-      </p>
-
-      <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mt-6 border-y border-slate-200 py-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 className="text-sm font-semibold text-slate-800">Probability context</h4>
-          <p className="text-xs text-slate-500">Model-estimated class probabilities</p>
+          <h4 className="text-sm font-semibold text-slate-900">Reference context</h4>
+          <p className="text-xs text-slate-500">Secondary model-output context</p>
         </div>
-        {classKeys.length ? (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {classKeys.map((classKey) => {
-              const probabilityValue = explanation.class_probabilities[classKey]
-              const probability = probabilityValue == null
-                ? Number.NaN
-                : Number(probabilityValue)
-              const label = model?.label_meanings?.[classKey] || classKey
-              const predicted = String(classKey) === String(explanation.prediction)
-              return (
-                <div key={classKey}>
-                  <div className="mb-1 flex justify-between gap-2 text-sm">
-                    <span className={predicted ? 'font-semibold text-blue-800' : 'text-slate-600'}>
-                      {label}{predicted ? ' · predicted' : ''}
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-700">
-                      {Number.isFinite(probability) ? formatPercent(probability * 100) : '—'}
-                    </span>
-                  </div>
-                  {Number.isFinite(probability) ? (
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className={`h-full rounded-full ${predicted ? 'bg-blue-700' : 'bg-slate-400'}`}
-                        style={{ width: `${Math.max(0, Math.min(100, probability * 100))}%` }}
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500">Probability unavailable</p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">Class probabilities are unavailable.</p>
-        )}
         {hasBaseline ? (
-          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-sm">
-            <span className="text-slate-600">Reference-background baseline for {explanation.explained_class_label}</span>
-            <span className="font-mono tabular-nums text-slate-800">{formatPercent(baseline * 100)}</span>
-            <span className="text-slate-400" aria-hidden="true">→</span>
-            <span className="text-slate-600">This sample</span>
-            <span className="font-mono font-semibold tabular-nums text-slate-900">{formatPercent(predictedOutput * 100)}</span>
-          </div>
-        ) : (
-          <p className="mt-3 text-xs text-slate-500">
-            A verified reference-background baseline is not available for this explanation.
+          <p className="mt-2 text-sm text-slate-600">
+            Reference-background baseline for {explainedLabel}: <span className="font-mono tabular-nums">{formatPercent(baseline * 100)}</span>
+            <span className="mx-2 text-slate-400" aria-hidden="true">→</span>
+            this sample <span className="font-mono font-semibold tabular-nums text-slate-900">{formatPercent(predictedOutput * 100)}</span>
           </p>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">A verified reference-background baseline is not available for this explanation.</p>
         )}
-        <p className="mt-3 text-xs leading-relaxed text-slate-500">
-          These probabilities describe model outputs for the displayed classes; they are not
-          clinical certainty or an independent diagnosis.
-        </p>
+        {!classKeys.some((classKey) => explanation.class_probabilities[classKey] != null && Number.isFinite(Number(explanation.class_probabilities[classKey]))) && (
+          <p className="mt-2 text-xs text-slate-500">Probability unavailable in the explanation response; the prediction page remains the source for model probabilities.</p>
+        )}
       </div>
 
-      <div className="mt-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 className="text-sm font-semibold text-slate-800">Top sample-specific drivers</h4>
-          <p className="text-xs text-slate-500">
-            {drivers.length} of {selected.all.length} selected model-space features
-          </p>
+      <div className="mt-7">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="eyebrow">Main evidence</p>
+            <h4 className="mt-2 text-xl font-semibold text-slate-950">What influenced this prediction?</h4>
+          </div>
+          <p className="text-xs text-slate-500">Sample-specific SHAP drivers</p>
         </div>
         {drivers.length ? (
           <>
-            <div className="mt-2 hidden justify-between gap-4 text-xs font-medium text-slate-500 sm:flex">
-              <span>Toward {classOrder[0] ? model?.label_meanings?.[classOrder[0]] || classOrder[0] : otherClassLabel}</span>
-              <span>Toward {classOrder[1] ? model?.label_meanings?.[classOrder[1]] || classOrder[1] : explanation.explained_class_label}</span>
+            <div className="mt-5 grid grid-cols-3 items-center gap-2 text-[11px] font-semibold text-slate-500 sm:gap-4">
+              <span className="text-right">Toward {leftLabel}</span>
+              <span className="text-center text-slate-400">Zero contribution</span>
+              <span>Toward {rightLabel}</span>
             </div>
-            <ul className="mt-1 divide-y divide-slate-100">
-              {drivers.map((feature) => (
+            <ul className="mt-1 divide-y divide-slate-100" aria-label="Feature influences">
+              {visibleDrivers.map((feature) => (
                 <DriverRow
                   key={feature.feature_id}
                   feature={feature}
                   maxAbs={maxAbs}
-                  explainedClassLabel={explanation.explained_class_label}
-                  otherClassLabel={otherClassLabel}
+                  explainedClassLabel={explainedLabel}
+                  otherClassLabel={otherLabel}
                   positiveSide={positiveSide}
                 />
               ))}
             </ul>
-            <p className="mt-2 text-xs text-slate-500">
-              Bar direction and size come from each feature&apos;s SHAP contribution to the explained
-              class probability. Relative influence is the share among the displayed drivers only.
-            </p>
+            {hiddenDriverCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAllDrivers((visible) => !visible)}
+                className="mt-4 text-sm font-semibold text-[#1f5f5c] hover:underline"
+              >
+                {showAllDrivers ? 'Show fewer drivers' : `View all ${drivers.length} influencing features`}
+              </button>
+            )}
+            <div className="mt-5 rounded-md border border-[#dce5e7] bg-[#f7faf9] p-4 text-sm leading-6 text-slate-600">
+              <p className="font-semibold text-slate-800">How to read this</p>
+              <p className="mt-1">Each bar shows how strongly a feature influenced this sample&apos;s prediction. Direction comes from the feature&apos;s SHAP contribution to the explained class. This describes model behavior; it does not establish biological causation.</p>
+            </div>
           </>
         ) : (
-          <p className="mt-3 text-sm text-slate-500">
-            No valid sample-specific SHAP drivers were returned for this explanation.
-          </p>
+          <p className="mt-3 text-sm text-slate-500">No valid sample-specific SHAP drivers were returned for this explanation.</p>
         )}
+      </div>
+
+      <div className="mt-5 flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+        <span className="mt-0.5 text-base text-[#2f7b78]" aria-hidden="true">ⓘ</span>
+        <p><span className="font-semibold text-slate-800">Important.</span> These features influenced the model&apos;s prediction. They do not establish biological causation or represent an independent clinical diagnosis. Interpret this explanation as model evidence, not as an independent clinical diagnosis.</p>
       </div>
 
       <details className="mt-5 border-t border-slate-200 pt-4">
