@@ -149,10 +149,6 @@ export default function App() {
     setCsvResult(null)
     setJsonRequest(null)
     resetExplanation()
-    setJsonResult(null)
-    setCsvResult(null)
-    setJsonRequest(null)
-    resetExplanation()
   }
 
   function handleJsonInputChange(value) {
