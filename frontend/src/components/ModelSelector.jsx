@@ -1,5 +1,6 @@
 import { ChevronDown, Database } from 'lucide-react'
 import { formatGeneCount } from '../interpret'
+import DnaLoader from './ui/DnaLoader'
 
 function optionLabel(model) {
   const genes = formatGeneCount(model.expected_genes)
@@ -39,7 +40,7 @@ export default function ModelSelector({
             value={selectedModel}
             onChange={(event) => onChange(event.target.value)}
             disabled={disabled || loading}
-            className="w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-3 pr-10 text-sm text-slate-900 outline-none transition focus:border-[#2f7b78] focus:ring-2 focus:ring-[#2f7b78]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+            className={`w-full appearance-none rounded-md border border-slate-300 bg-white py-3 pr-10 text-sm text-slate-900 outline-none transition focus:border-[#2f7b78] focus:ring-2 focus:ring-[#2f7b78]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 ${loading ? 'pl-10' : 'pl-3'}`}
           >
             <option value="">
               {loading ? 'Loading available models…' : 'Select a model'}
@@ -50,6 +51,7 @@ export default function ModelSelector({
               </option>
             ))}
           </select>
+          {loading && <span className="absolute left-3 top-1/2 -translate-y-1/2"><DnaLoader size="small" label="Loading available models" /></span>}
           <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         </div>
       </div>

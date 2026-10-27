@@ -161,15 +161,100 @@ body {
   background: #f8fafc;
 }
 
-.loading-orbit {
+.analysis-loading-loader {
   align-items: center;
-  background: #e6eeee;
-  border-radius: 999px;
   display: inline-flex;
   height: 4.5rem;
   justify-content: center;
   margin-bottom: 1.25rem;
   width: 4.5rem;
+}
+
+.dna-loader {
+  align-items: flex-start;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--dna-gap);
+  height: var(--dna-height);
+  justify-content: center;
+  width: max-content;
+}
+
+.dna-loader--small {
+  --dna-dot-size: 4px;
+  --dna-gap: 0px;
+  --dna-height: 24px;
+  --dna-rung-width: 2px;
+}
+
+.dna-loader--medium {
+  --dna-dot-size: 5px;
+  --dna-gap: 1px;
+  --dna-height: 40px;
+  --dna-rung-width: 3px;
+}
+
+.dna-loader--large {
+  --dna-dot-size: 6px;
+  --dna-gap: 2px;
+  --dna-height: 64px;
+  --dna-rung-width: 4px;
+}
+
+.dna-loader__rung {
+  height: 100%;
+  position: relative;
+  width: var(--dna-rung-width);
+}
+
+.dna-loader__rung::before,
+.dna-loader__rung::after {
+  animation: dna-swing 1.6s ease-in-out infinite;
+  animation-delay: calc(var(--dna-index) * -0.13s);
+  border-radius: 50%;
+  content: '';
+  height: var(--dna-dot-size);
+  left: 50%;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  width: var(--dna-dot-size);
+}
+
+.dna-loader__rung::before {
+  background: #2f7b78;
+}
+
+.dna-loader__rung::after {
+  animation-delay: calc(var(--dna-index) * -0.13s - 0.8s);
+  background: #c56b36;
+}
+
+@keyframes dna-swing {
+  0%, 100% {
+    top: 0;
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+
+  50% {
+    top: calc(100% - var(--dna-dot-size));
+    opacity: 0.65;
+    transform: translateX(-50%) scale(0.65);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dna-loader__rung::before,
+  .dna-loader__rung::after {
+    animation: none;
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+
+  .dna-loader__rung::after {
+    top: calc(100% - var(--dna-dot-size));
+  }
 }
 
 .indeterminate-bar {

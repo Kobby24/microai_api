@@ -1,4 +1,5 @@
-import { Check, Circle, LoaderCircle } from 'lucide-react'
+import { Check, Circle } from 'lucide-react'
+import DnaLoader from './ui/DnaLoader'
 
 export default function AnalysisLoadingOverlay({ mode }) {
   const steps = [
@@ -9,9 +10,9 @@ export default function AnalysisLoadingOverlay({ mode }) {
   ]
 
   return (
-    <div className="dialog-backdrop" role="status" aria-live="polite">
+    <div className="dialog-backdrop" aria-live="polite">
       <section className="loading-panel" aria-labelledby="analysis-loading-title">
-        <div className="loading-orbit"><LoaderCircle className="h-8 w-8 animate-spin text-[#2f7b78]" /></div>
+        <div className="analysis-loading-loader"><DnaLoader size="large" label="Analyzing your data" /></div>
         <p className="eyebrow">Analysis in progress</p>
         <h2 id="analysis-loading-title" className="mt-2 text-2xl font-semibold text-slate-950">Analyzing your data</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">MicroAI is validating your input and running the selected model.</p>
@@ -20,7 +21,7 @@ export default function AnalysisLoadingOverlay({ mode }) {
           {steps.map((step) => (
             <li key={step.label} className="flex items-center gap-3 text-sm">
               {step.state === 'complete' && <Check className="h-4 w-4 text-emerald-700" aria-hidden="true" />}
-              {step.state === 'active' && <LoaderCircle className="h-4 w-4 animate-spin text-[#2f7b78]" aria-hidden="true" />}
+              {step.state === 'active' && <Circle className="h-4 w-4 fill-[#2f7b78] text-[#2f7b78]" aria-hidden="true" />}
               {step.state === 'pending' && <Circle className="h-4 w-4 text-slate-300" aria-hidden="true" />}
               <span className={step.state === 'active' ? 'font-semibold text-slate-900' : 'text-slate-600'}>{step.label}</span>
             </li>

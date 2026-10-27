@@ -1,4 +1,5 @@
 import { Dna } from 'lucide-react'
+import DnaLoader from './ui/DnaLoader'
 
 export default function Header({ apiStatus, model, workflowStep }) {
   const statusLabel =
@@ -8,12 +9,7 @@ export default function Header({ apiStatus, model, workflowStep }) {
         ? 'Checking API…'
         : 'API unreachable'
 
-  const statusColor =
-    apiStatus === 'ok'
-      ? 'bg-blue-600'
-      : apiStatus === 'loading'
-        ? 'bg-slate-400'
-        : 'bg-red-500'
+  const statusColor = apiStatus === 'ok' ? 'bg-blue-600' : 'bg-red-500'
 
   return (
     <header className="border-b border-slate-200/90 bg-white/95">
@@ -34,7 +30,9 @@ export default function Header({ apiStatus, model, workflowStep }) {
         <div className="flex items-center gap-4">
           {model && <span className="hidden text-xs text-slate-500 sm:inline">{model.display_name || model.name}</span>}
           <span className="flex items-center gap-2 border-l border-slate-200 pl-4 text-xs font-medium text-slate-600">
-            <span className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
+            {apiStatus === 'loading'
+              ? <DnaLoader size="small" label="Checking API connection" />
+              : <span className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />}
             <span className="hidden sm:inline">{statusLabel}</span>
           </span>
         </div>

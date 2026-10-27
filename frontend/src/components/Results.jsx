@@ -1,6 +1,7 @@
-import { AlertCircle, CheckCircle2, Eye, LoaderCircle, Sparkles, Table2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Eye, Sparkles, Table2, X } from 'lucide-react'
 import { interpretClass, interpretPrediction, summarizeBatch } from '../interpret'
 import ExplanationPanel from './ExplanationPanel'
+import DnaLoader from './ui/DnaLoader'
 
 function formatPercent(value) {
   if (value === null || value === undefined) return '—'
@@ -111,7 +112,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
             disabled={explaining || !model?.ready}
             className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {explaining ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {explaining ? <DnaLoader size="small" label="Explaining prediction" /> : <Sparkles className="h-4 w-4" />}
             {explaining ? 'Explaining prediction…' : 'Explain prediction'}
           </button>
         )}
@@ -132,9 +133,10 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
                 type="button"
                 onClick={onExplain}
                 disabled={explaining || !model?.ready}
-                className="mt-2 font-medium underline underline-offset-2 disabled:opacity-60"
+                className="mt-2 inline-flex items-center gap-1.5 font-medium underline underline-offset-2 disabled:opacity-60"
               >
-                Try again
+                {explaining && <DnaLoader size="small" label="Retrying explanation" />}
+                {explaining ? 'Retrying…' : 'Try again'}
               </button>
             </div>
           </div>
@@ -227,7 +229,7 @@ function BatchPredictionDetails({
 
       {explaining && (
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-600" role="status" aria-live="polite">
-          <LoaderCircle className="h-4 w-4 animate-spin" />
+          <DnaLoader size="small" label="Calculating explanation" />
           Calculating a local explanation for this sample…
         </p>
       )}
@@ -242,9 +244,10 @@ function BatchPredictionDetails({
               type="button"
               onClick={() => onExplain(row)}
               disabled={explaining}
-              className="mt-2 font-medium underline underline-offset-2 disabled:opacity-60"
+              className="mt-2 inline-flex items-center gap-1.5 font-medium underline underline-offset-2 disabled:opacity-60"
             >
-              Try again
+              {explaining && <DnaLoader size="small" label="Retrying explanation" />}
+              {explaining ? 'Retrying…' : 'Try again'}
             </button>
           </div>
         </div>

@@ -1,6 +1,7 @@
-import { ArrowLeft, AlertCircle, LoaderCircle } from 'lucide-react'
+import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { interpretClass } from '../interpret'
 import ExplanationPanel from './ExplanationPanel'
+import DnaLoader from './ui/DnaLoader'
 
 function formatPercent(value) {
   const numeric = Number(value)
@@ -69,7 +70,7 @@ export default function PredictionExplanationPage({ prediction, model, explanati
         <div className="mt-5"><ProbabilityList prediction={prediction} model={model} /></div>
       </section>
 
-      {loading && <section className="surface-panel p-6" role="status" aria-live="polite"><div className="flex items-center gap-3"><LoaderCircle className="h-5 w-5 animate-spin text-[#2f7b78]" /><div><h3 className="font-semibold text-slate-950">Preparing explanation</h3><p className="mt-1 text-sm text-slate-600">Calculating a local explanation for this sample.</p></div></div></section>}
+      {loading && <section className="surface-panel p-6" aria-live="polite"><div className="flex items-center gap-3"><DnaLoader size="small" label="Preparing explanation" /><div><h3 className="font-semibold text-slate-950">Preparing explanation</h3><p className="mt-1 text-sm text-slate-600">Calculating a local explanation for this sample.</p></div></div></section>}
       {error && <section className="rounded-md border border-red-200 bg-red-50 p-5 text-sm text-red-800" role="alert"><div className="flex items-start gap-3"><AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">We couldn&apos;t generate the explanation</p><p className="mt-1">{error}</p><button type="button" onClick={onRetry} className="mt-3 font-semibold underline">Try again</button></div></div></section>}
       {explanation && <ExplanationPanel explanation={explanation} model={model} />}
     </div>
