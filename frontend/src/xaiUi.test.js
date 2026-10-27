@@ -52,10 +52,28 @@ const explanation = {
       shap_value: -0.1,
       relative_influence_percent: 25,
     },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      feature_id: `probe-other-${index + 1}`,
+      raw_input_value: 2,
+      model_input_value: 0.1,
+      expression_level: 'about typical',
+      direction: 'toward_explained_class',
+      shap_value: 0.033,
+    })),
   ],
   features: [
     { feature_id: 'probe-positive', gene_symbol: 'TP53', raw_input_value: 4.2, model_input_value: 0.7, expression_level: 'about typical', direction: 'toward_explained_class', relative_influence_percent: 75, shap_value: 0.3 },
     { feature_id: 'probe-negative', raw_input_value: 1.8, model_input_value: -0.2, expression_level: 'about typical', direction: 'away_from_explained_class', relative_influence_percent: 25, shap_value: -0.1 },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      feature_id: `probe-other-${index + 1}`,
+      raw_input_value: 2,
+      model_input_value: 0.1,
+      expression_level: 'about typical',
+      direction: 'toward_explained_class',
+      shap_value: 0.033,
+      relative_influence_percent: 1,
+    })),
+    { feature_id: 'probe-remainder', raw_input_value: 2, model_input_value: 0.1, expression_level: 'about typical', direction: 'toward_explained_class', shap_value: 0.002 },
   ],
   metadata: {
     method: 'shap_permutation',
@@ -149,16 +167,22 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Class probabilities/)
   })
 
-  it('renders positive and negative contributors and selected-feature scope', () => {
+  it('renders a closing waterfall, signed pp contributions, and selected-feature scope', () => {
     const markup = renderResults({ explanation })
     assert.match(markup, /TP53/)
     assert.match(markup, /probe-positive/)
     assert.match(markup, /probe-negative/)
     assert.match(markup, /Toward ER-positive/)
-    assert.match(markup, /Toward ER-negative/)
-    assert.match(markup, /Show technical details/)
+    assert.match(markup, /Away from ER-positive/)
+    assert.match(markup, /Other 1 feature/)
+    assert.match(markup, /1 undisplayed/)
+    assert.match(markup, /Contribution to model output · percentage points \(pp\)/)
+    assert.match(markup, /Technical details/)
     assert.match(markup, /0\.3000/)
-    assert.match(markup, /Reference-background baseline/)
+    assert.match(markup, /Cumulative SHAP waterfall/)
+    assert.match(markup, /Final output/)
+    assert.match(markup, /\+30\.00 pp/)
+    assert.match(markup, /-10\.00 pp/)
     assert.match(markup, /model evidence, not as an independent clinical diagnosis/)
     assert.match(markup, /Selected-feature-space explanation only/)
     assert.match(markup, /Additivity verified/)
@@ -185,9 +209,9 @@ describe('SHAP explanation UI', () => {
     }
     const markup = renderResults({ explanation: incompleteExplanation })
 
-    assert.match(markup, /Probability unavailable/)
-    assert.match(markup, /reference-background baseline is not available/)
+    assert.match(markup, /Class probabilities/)
     assert.match(markup, /No valid sample-specific SHAP drivers were returned/)
+    assert.doesNotMatch(markup, /Cumulative SHAP waterfall/)
     assert.doesNotMatch(markup, /Reference-background baseline.*0\.0%/)
   })
 
@@ -231,7 +255,7 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Sample 4/)
     assert.match(markup, /Model confidence \(predicted-class probability\)/)
     assert.match(markup, /The strongest SHAP contributions toward this class/)
-    assert.match(markup, /Show technical details/)
+    assert.match(markup, /Technical details/)
     assert.match(markup, /Back to results/)
   })
 
