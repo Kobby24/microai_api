@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { fetchGlobalDrivers, extractApiError } from '../api'
 import { buildWaterfall, selectContributors } from '../xaiPresentation'
+import DnaLoader from './ui/DnaLoader'
 
 function formatValue(value, digits = 4) {
   if (value === null || value === undefined) return '—'
@@ -350,7 +351,10 @@ function GlobalDriversSection({ model }) {
         drivers are shown.
       </p>
       {state.status === 'loading' && (
-        <p className="mt-3 text-sm text-slate-500" role="status">Loading global model importance…</p>
+        <p className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+          <DnaLoader size="small" label="Loading global model importance" />
+          Loading global model importance…
+        </p>
       )}
       {state.status === 'error' && (
         <p className="mt-3 text-sm text-amber-800" role="status">

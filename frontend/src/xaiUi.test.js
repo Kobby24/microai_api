@@ -92,6 +92,11 @@ let Results
 let AnalysisReviewDialog
 let AnalysisLoadingOverlay
 let PredictionExplanationPage
+let DnaLoader
+let Header
+let ModelSelector
+let JsonTab
+let CsvTab
 
 before(async () => {
   vite = await createServer({
@@ -104,6 +109,11 @@ before(async () => {
   AnalysisReviewDialog = (await vite.ssrLoadModule('/src/components/AnalysisReviewDialog.jsx')).default
   AnalysisLoadingOverlay = (await vite.ssrLoadModule('/src/components/AnalysisLoadingOverlay.jsx')).default
   PredictionExplanationPage = (await vite.ssrLoadModule('/src/components/PredictionExplanationPage.jsx')).default
+  DnaLoader = (await vite.ssrLoadModule('/src/components/ui/DnaLoader.jsx')).default
+  Header = (await vite.ssrLoadModule('/src/components/Header.jsx')).default
+  ModelSelector = (await vite.ssrLoadModule('/src/components/ModelSelector.jsx')).default
+  JsonTab = (await vite.ssrLoadModule('/src/components/JsonTab.jsx')).default
+  CsvTab = (await vite.ssrLoadModule('/src/components/CsvTab.jsx')).default
 })
 
 after(async () => {
@@ -164,6 +174,7 @@ describe('SHAP explanation UI', () => {
     const markup = renderResults({ explaining: true })
     assert.match(markup, /Explaining prediction/)
     assert.match(markup, /Calculating a local explanation/)
+    assert.match(markup, /dna-loader--small/)
     assert.match(markup, /Class probabilities/)
   })
 
@@ -191,10 +202,11 @@ describe('SHAP explanation UI', () => {
   })
 
   it('shows an explanation error while keeping the prediction available', () => {
-    const markup = renderResults({ explanationError: 'Reference data unavailable.' })
+    const markup = renderResults({ explanationError: 'Reference data unavailable.', explaining: true })
     assert.match(markup, /Explanation unavailable/)
     assert.match(markup, /Reference data unavailable/)
-    assert.match(markup, /Try again/)
+    assert.match(markup, /Retrying…/)
+    assert.match(markup, /dna-loader--small/)
     assert.match(markup, /Class probabilities/)
   })
 
@@ -288,6 +300,64 @@ describe('SHAP explanation UI', () => {
 })
 
 describe('analysis workflow surfaces', () => {
+  it('uses the DNA loader for API/model discovery and both prediction buttons', () => {
+    const header = renderToStaticMarkup(
+      React.createElement(Header, { apiStatus: 'loading', model: null, workflowStep: 'start' }),
+    )
+    const selector = renderToStaticMarkup(
+      React.createElement(ModelSelector, {
+        models: [],
+        selectedModel: '',
+        onChange: () => {},
+        loading: true,
+        disabled: false,
+      }),
+    )
+    const jsonTab = renderToStaticMarkup(
+      React.createElement(JsonTab, {
+        value: '[]',
+        onChange: () => {},
+        sampleId: '',
+        onSampleIdChange: () => {},
+        onSubmit: () => {},
+        loading: true,
+        disabled: false,
+        model,
+      }),
+    )
+    const csvTab = renderToStaticMarkup(
+      React.createElement(CsvTab, {
+        file: null,
+        onFileChange: () => {},
+        isDragging: false,
+        onDragState: () => {},
+        onSubmit: () => {},
+        loading: true,
+        disabled: false,
+        model,
+      }),
+    )
+
+    assert.match(header, /Checking API connection/)
+    assert.match(selector, /Loading available models/)
+    assert.match(jsonTab, /Prediction in progress/)
+    assert.match(csvTab, /Batch prediction in progress/)
+    for (const markup of [header, selector, jsonTab, csvTab]) {
+      assert.match(markup, /dna-loader--small/)
+      assert.doesNotMatch(markup, /animate-spin/)
+    }
+  })
+
+  it('renders the reusable accessible DNA loader with twelve decorative rungs', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(DnaLoader, { size: 'small', label: 'Loading models' }),
+    )
+
+    assert.match(markup, /role="status"/)
+    assert.match(markup, /Loading models/)
+    assert.equal((markup.match(/dna-loader__rung/g) || []).length, 12)
+  })
+
   it('renders review metadata without exposing the full input', () => {
     const markup = renderToStaticMarkup(
       React.createElement(AnalysisReviewDialog, {
@@ -312,7 +382,10 @@ describe('analysis workflow surfaces', () => {
     assert.match(markup, /Analyzing your data/)
     assert.match(markup, /Input validation/)
     assert.match(markup, /Running model prediction/)
+    assert.match(markup, /dna-loader--large/)
+    assert.doesNotMatch(markup, /dna-loader--small/)
     assert.match(markup, /indeterminate-bar/)
+    assert.doesNotMatch(markup, /animate-spin/)
     assert.doesNotMatch(markup, /10%|50%|100%/)
   })
 
@@ -332,6 +405,7 @@ describe('analysis workflow surfaces', () => {
     assert.match(markup, /sample-001/)
     assert.match(markup, /Class probabilities/)
     assert.match(markup, /Preparing explanation/)
+    assert.match(markup, /dna-loader--small/)
 
     const unavailable = renderToStaticMarkup(
       React.createElement(PredictionExplanationPage, {

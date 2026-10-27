@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { FileSpreadsheet, Info, Upload, X } from 'lucide-react'
 import { BATCH_ACCEPT, isBatchExpressionFile } from '../batchFile'
 import { formatGeneCount } from '../interpret'
+import DnaLoader from './ui/DnaLoader'
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -110,8 +111,9 @@ export default function CsvTab({
         <button
           type="submit"
           disabled={disabled || loading}
-          className="inline-flex items-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="inline-flex min-w-52 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
+          {loading && <DnaLoader size="small" label="Batch prediction in progress" />}
           {loading ? 'Processing CSV / TSV…' : 'Run batch prediction'}
         </button>
       </div>
