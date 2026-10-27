@@ -48,9 +48,9 @@ export default function JsonTab({
       <div className="flex items-start gap-2.5 rounded-lg border border-blue-100 bg-blue-50 px-3.5 py-3 text-sm text-blue-900">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
         <p>
-          <span className="font-semibold">Input must be a JSON array of feature ID/value objects.</span>{' '}
-          Include every required identifier shown in model details
-          {geneCount ? ` (${geneCount} for ${model.display_name || model.name})` : ''}. Entries may be reordered; IDs must be unique and values must be finite JSON numbers.
+          <span className="font-semibold">Enter a JSON array of feature ID/value pairs.</span>{' '}
+          Include every required ID shown in model details
+          {geneCount ? ` (${geneCount} for ${model.display_name || model.name})` : ''}. IDs must be unique. Values must be finite numbers.
         </p>
       </div>
 
@@ -60,8 +60,8 @@ export default function JsonTab({
           disabled={disabled || loading}
           className="inline-flex min-w-40 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading && <DnaLoader size="small" label="Prediction in progress" />}
-          {loading ? 'Predicting…' : 'Run prediction'}
+          {loading && <DnaLoader size="small" label="Running model" />}
+          {loading ? 'Running model' : 'Review analysis'}
         </button>
       </div>
     </form>

@@ -1,18 +1,18 @@
 export function parseExpressionInput(raw, expectedFeatureIds) {
   const trimmed = raw.trim()
   if (!trimmed) {
-    throw new Error('Please enter gene/probe IDs and expression values as JSON.')
+    throw new Error('Enter gene/probe IDs and expression values as JSON.')
   }
 
   let parsed
   try {
     parsed = JSON.parse(trimmed)
   } catch {
-    throw new Error('Input must be a valid JSON array of feature ID/value objects.')
+    throw new Error('Enter a valid JSON array of feature ID/value objects.')
   }
 
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new Error('Input must be a non-empty JSON array of feature ID/value objects.')
+    throw new Error('The JSON array must contain at least one feature.')
   }
   if (parsed.some((entry) => entry === null || typeof entry !== 'object' || Array.isArray(entry))) {
     throw new Error('Input must be a JSON array of feature ID/value objects.')
@@ -32,7 +32,7 @@ export function parseExpressionInput(raw, expectedFeatureIds) {
       || typeof entry.value !== 'number'
       || !Number.isFinite(entry.value)
     ) {
-      throw new Error('Each entry must contain a non-empty feature_id and a finite numeric value.')
+      throw new Error('Each entry needs a feature_id and a finite numeric value.')
     }
     const featureId = entry.feature_id.trim()
     if (valuesById.has(featureId)) {
@@ -46,7 +46,7 @@ export function parseExpressionInput(raw, expectedFeatureIds) {
     || expectedFeatureIds.some((featureId) => !valuesById.has(featureId))
     || [...valuesById.keys()].some((featureId) => !expectedFeatureIds.includes(featureId))
   ) {
-    throw new Error('Include each required gene/probe ID exactly once and no other IDs.')
+    throw new Error('Include every required gene/probe ID once. Do not include other IDs.')
   }
 
   return {

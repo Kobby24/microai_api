@@ -8,7 +8,7 @@ function optionLabel(model) {
   const parts = [model.display_name || model.name]
   if (target) parts.push(target)
   if (genes) parts.push(`${genes} genes`)
-  return parts.join(' — ')
+  return parts.join(' · ')
 }
 
 export default function ModelSelector({
@@ -31,7 +31,7 @@ export default function ModelSelector({
             Select an analysis model
           </label>
           <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-            Choose the model that matches your supported gene-expression dataset and research target.
+            Select a model that supports your dataset and research target.
           </p>
         </div>
         <div className="relative">
@@ -43,7 +43,7 @@ export default function ModelSelector({
             className={`w-full appearance-none rounded-md border border-slate-300 bg-white py-3 pr-10 text-sm text-slate-900 outline-none transition focus:border-[#2f7b78] focus:ring-2 focus:ring-[#2f7b78]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 ${loading ? 'pl-10' : 'pl-3'}`}
           >
             <option value="">
-              {loading ? 'Loading available models…' : 'Select a model'}
+              {loading ? 'Loading models' : 'Select a model'}
             </option>
             {models.map((model) => (
               <option key={model.name} value={model.name}>
@@ -70,7 +70,7 @@ export default function ModelSelector({
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Expected genes</p>
             <p className="mt-1 text-sm font-medium text-slate-900">
-              {geneCount ? `${geneCount} expression values` : 'Provided by the model at prediction time'}
+              {geneCount ? `${geneCount} expression values` : 'Defined by the model'}
             </p>
           </div>
           <div>
@@ -95,7 +95,7 @@ export default function ModelSelector({
             </details>
           ) : (
             <p className="text-sm font-medium text-red-800 sm:col-span-3" role="status">
-              {selected.readiness_reason || 'Predictions are disabled because this model is not ready.'}
+              {selected.readiness_reason || 'This model is not ready for predictions.'}
             </p>
           )}
         </div>

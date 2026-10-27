@@ -44,7 +44,7 @@ function parseDelimitedText(text, separator) {
     }
   }
 
-  if (quoted) throw new Error('The uploaded table contains an unterminated quoted value.')
+  if (quoted) throw new Error('The table contains an unterminated quoted value.')
   if (field || row.length) {
     row.push(field)
     if (row.length !== 1 || row[0] !== '') rows.push(row)
@@ -53,7 +53,7 @@ function parseDelimitedText(text, separator) {
 
   const width = rows[0].length
   if (rows.some((values) => values.length !== width)) {
-    throw new Error('The uploaded table has rows with inconsistent numbers of values.')
+    throw new Error('Rows have different numbers of values.')
   }
   return rows
 }
@@ -82,7 +82,7 @@ function numericRows(rows) {
     const numeric = Number(trimmed)
     if (!trimmed || (!numericSyntax.test(trimmed) && !/^[+-]?(?:infinity|inf|nan)$/i.test(trimmed)) || !Number.isFinite(numeric)) {
       throw new Error(
-        'Expression values must be numeric and finite; missing, NaN, and infinite values are not supported.',
+        'Expression values must be numeric and finite. Missing values, NaN, and infinity are not accepted.',
       )
     }
     return numeric
@@ -124,7 +124,7 @@ export function parseBatchExpressionText(text, filename, featureIds) {
   ) {
     const order = validateIdentifiers(headerFeatureIds, featureIds)
     const values = rows.slice(1).map((values) => sampleIdColumn === null ? values : values.slice(1))
-    if (!values.length) throw new Error('The expression table contains no samples.')
+    if (!values.length) throw new Error('The table contains no samples.')
     const numeric = numericRows(values)
     return {
       featureIds: [...featureIds],
@@ -146,7 +146,7 @@ export function parseBatchExpressionText(text, filename, featureIds) {
   }
 
   throw new Error(
-    `Expected ${featureIds.length} identified genes, but the table has no unambiguous matching feature header or gene-ID column.`,
+    `Expected ${featureIds.length} model feature IDs in the header or gene-ID column.`,
   )
 }
 

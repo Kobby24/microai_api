@@ -65,10 +65,10 @@ export default function CsvTab({
           <Upload className="h-5 w-5" />
         </div>
         <p className="text-sm font-semibold text-slate-800">
-          Drop a CSV or TSV file here, or click to browse
+          Drop a CSV or TSV file here, or browse to select one
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          .csv and .tsv · feature IDs required · headers or a gene-ID column
+          CSV or TSV. Include feature IDs in the header or first column.
         </p>
       </div>
 
@@ -99,11 +99,11 @@ export default function CsvTab({
       <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <p>
-          <span className="font-semibold">Feature IDs must match the selected model</span>
+          <span className="font-semibold">Feature IDs must match the selected model.</span>
           {formatGeneCount(model?.expected_genes)
             ? ` (${formatGeneCount(model.expected_genes)} for ${model.display_name || model.name})`
             : ''}
-          . For sample rows, include a header with every gene/probe ID (and optionally a sample-ID column). For gene rows, the first column must contain gene/probe IDs and each remaining column is a sample. Values are aligned by identifier; missing and non-finite values are rejected.
+          {' '}Sample rows need every feature ID in the header; a sample-ID column is optional. Gene rows need feature IDs in the first column and samples in the remaining columns. Values must be finite.
         </p>
       </div>
 
@@ -113,8 +113,8 @@ export default function CsvTab({
           disabled={disabled || loading}
           className="inline-flex min-w-52 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading && <DnaLoader size="small" label="Batch prediction in progress" />}
-          {loading ? 'Processing CSV / TSV…' : 'Run batch prediction'}
+          {loading && <DnaLoader size="small" label="Processing batch" />}
+          {loading ? 'Processing file' : 'Review analysis'}
         </button>
       </div>
     </form>

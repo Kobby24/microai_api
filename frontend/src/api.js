@@ -26,11 +26,11 @@ export function extractApiError(error) {
   }
 
   if (error.code === 'ECONNABORTED') {
-    return 'The request timed out. Large CSV or TSV files can take longer to process — try again, or confirm the API is running.'
+    return 'The request timed out. Large CSV or TSV files may take longer. Try again or check that the API is running.'
   }
 
   if (error.request && !error.response) {
-    return 'Unable to reach the MICRO-AI API. Confirm the backend is available at https://microai-api.onrender.com.'
+    return 'We could not reach the API. Check that the backend is available at https://microai-api.onrender.com.'
   }
 
   if (error.response?.status) {

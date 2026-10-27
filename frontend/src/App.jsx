@@ -93,7 +93,7 @@ export default function App() {
 
   function requireModel() {
     if (!selectedModel) {
-      throw new Error('Select a model before running a prediction.')
+      throw new Error('Select a model first.')
     }
   }
 
@@ -115,12 +115,12 @@ export default function App() {
     event.preventDefault()
     setError('')
     if (!selectedModel) {
-      setError('Choose a model before reviewing the analysis.')
+      setError('Select a model first.')
       setWorkflowStep('model')
       return
     }
     try {
-      if (!selectedMeta?.ready) throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for safe prediction.')
+      if (!selectedMeta?.ready) throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for predictions.')
       parseExpressionInput(jsonInput, selectedMeta.feature_ids)
     } catch (validationError) {
       setError(validationError.message)
@@ -141,7 +141,7 @@ export default function App() {
     try {
       requireModel()
       if (!selectedMeta?.ready) {
-        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for safe prediction.')
+        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for predictions.')
       }
       const input = parseExpressionInput(jsonInput, selectedMeta.feature_ids)
       setLoading(true)
@@ -161,12 +161,12 @@ export default function App() {
     event.preventDefault()
     setError('')
     if (!selectedModel) {
-      setError('Choose a model before reviewing the analysis.')
+      setError('Select a model first.')
       setWorkflowStep('model')
       return
     }
     if (!csvFile) {
-      setError('Upload a .csv or .tsv file before reviewing the analysis.')
+      setError('Select a CSV or TSV file first.')
       return
     }
     setPendingMode('csv')
@@ -184,10 +184,10 @@ export default function App() {
     try {
       requireModel()
       if (!selectedMeta?.ready) {
-        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for safe prediction.')
+        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for predictions.')
       }
       if (!csvFile) {
-        throw new Error('Upload a .csv or .tsv file before running a batch prediction.')
+        throw new Error('Select a CSV or TSV file first.')
       }
       batchSourceRef.current = null
       setLoading(true)
@@ -254,7 +254,7 @@ export default function App() {
         jsonRequest.sampleId,
       )
       if (!isExplanationForPrediction(result, selectedMeta, jsonResult)) {
-        throw new Error('The explanation response did not match the current prediction.')
+        throw new Error('Explanation did not match the current prediction.')
       }
       if (requestId !== explanationRequestId.current) return
       dispatchExplanation({ type: 'success', requestId, result })
@@ -287,10 +287,10 @@ export default function App() {
 
     try {
       if (!csvFile) {
-        throw new Error('The uploaded source file is no longer available. Upload it again to explain a sample.')
+        throw new Error('Source file unavailable. Upload it again to explain this sample.')
       }
       if (!selectedMeta?.ready || !Array.isArray(selectedMeta.feature_ids)) {
-        throw new Error('The selected model does not have a verified gene/probe input schema.')
+        throw new Error('The model has no verified gene/probe schema.')
       }
 
       let source = batchSourceRef.current
@@ -302,7 +302,7 @@ export default function App() {
           parsed.samples.length !== csvResult?.samples_processed
           || parsed.samples.length !== csvResult?.results?.length
         ) {
-          throw new Error('The uploaded file no longer matches the batch results. Run the batch prediction again.')
+          throw new Error('Source file differs from these results. Run the batch prediction again.')
         }
         source = {
           file: csvFile,
@@ -335,7 +335,7 @@ export default function App() {
         !isExplanationForPrediction(result, selectedMeta, row)
         || (result.sample_id != null && String(result.sample_id) !== String(payload.sampleId ?? ''))
       ) {
-        throw new Error('The explanation response did not match the selected batch sample.')
+        throw new Error('Explanation did not match this batch sample.')
       }
       if (requestId !== explanationRequestId.current) return
       source.explanations.set(row.sample_index, result)
@@ -427,10 +427,10 @@ export default function App() {
             <div className="max-w-2xl">
               <p className="eyebrow">Research analysis workspace</p>
               <h2 className="mt-4 max-w-xl font-display text-4xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-5xl">
-                Gene expression analysis, made inspectable.
+                Gene expression analysis
               </h2>
               <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-                MicroAI helps research teams run supported model predictions, review class probabilities, and investigate the features influencing each result.
+                Run supported models, review probabilities, and inspect sample-specific features.
               </p>
               <button
                 type="button"
@@ -439,12 +439,11 @@ export default function App() {
               >
                 Start analysis
               </button>
-              <p className="mt-4 text-xs text-slate-500">Decision support for research use. Not a standalone clinical diagnosis.</p>
             </div>
             <div className="border-l border-slate-300 pl-6 lg:mb-2">
-              <p className="text-sm font-semibold text-slate-900">A focused workflow</p>
+              <p className="text-sm font-semibold text-slate-900">Analysis workflow</p>
               <ol className="mt-5 space-y-5">
-                {['Choose a validated model', 'Provide a single sample or batch file', 'Review the model output and its drivers'].map((item, index) => (
+                {['Choose a supported model', 'Provide a sample or batch file', 'Review predictions and feature contributions'].map((item, index) => (
                   <li key={item} className="flex gap-4">
                     <span className="font-mono text-xs font-semibold text-[#2f7b78]">0{index + 1}</span>
                     <span className="text-sm leading-6 text-slate-600">{item}</span>
@@ -460,7 +459,7 @@ export default function App() {
             <div>
               <p className="eyebrow">New analysis</p>
               <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Prepare your analysis</h2>
-              <p className="mt-2 text-sm text-slate-600">Choose the model and data representation that match your research question.</p>
+              <p className="mt-2 text-sm text-slate-600">Choose a model and input format for your research question.</p>
             </div>
             <div className="workflow-track" aria-label="Analysis workflow">
               {['Model', 'Data', 'Results'].map((label, index) => {
@@ -485,7 +484,7 @@ export default function App() {
                 <div className="mb-6 flex items-end justify-between gap-4 border-b border-slate-200 pb-5">
                   <div>
                     <p className="eyebrow">02 / Provide data</p>
-                    <h3 className="mt-2 text-xl font-semibold text-slate-950">How would you like to analyze your data?</h3>
+                    <h3 className="mt-2 text-xl font-semibold text-slate-950">Choose an input format</h3>
                   </div>
                   <p className="hidden text-right text-xs text-slate-500 sm:block">Model: {selectedMeta.display_name || selectedMeta.name}</p>
                 </div>
@@ -522,7 +521,7 @@ export default function App() {
         {(workflowStep === 'results' || jsonResult || csvResult) && !loading && !explanationView && (
           <div className="mt-8">
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-              <div><p className="eyebrow">05 / Analysis results</p><h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Review model outputs</h2></div>
+              <div><p className="eyebrow">05 / Analysis results</p><h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Model results</h2></div>
               <button type="button" onClick={() => { setWorkflowStep('input'); setJsonResult(null); setCsvResult(null); resetBatchSelection(); resetExplanation() }} className="text-sm font-semibold text-[#1f5f5c] hover:underline">Start another analysis</button>
             </div>
             <Results jsonResult={jsonResult} csvResult={csvResult} model={selectedMeta} onExplain={handleExplain} onOpenExplanation={openSingleExplanation} onOpenBatchExplanation={openBatchExplanation} explaining={explanationState.status === 'loading'} explanation={explanationState.result} explanationError={explanationState.error} selectedBatchRow={selectedBatchRow} onExplainBatch={handleBatchExplain} onCloseBatchExplanation={handleCloseBatchExplanation} />

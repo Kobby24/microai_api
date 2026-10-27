@@ -138,7 +138,7 @@ function renderResults(overrides = {}) {
 describe('SHAP explanation UI', () => {
   it('shows an explicit explain action after a single-sample prediction', () => {
     const markup = renderResults()
-    assert.match(markup, /Explain prediction/)
+    assert.match(markup, /View explanation/)
     assert.match(markup, /Class probabilities/)
     assert.match(markup, /Sample ID:.*sample-001/)
     assert.doesNotMatch(markup, /Show technical details/)
@@ -167,13 +167,13 @@ describe('SHAP explanation UI', () => {
 
   it('does not show an Explain action without a valid single prediction', () => {
     const markup = renderResults({ jsonResult: null })
-    assert.doesNotMatch(markup, /Explain prediction/)
+    assert.doesNotMatch(markup, /View explanation/)
   })
 
   it('shows an accessible loading state without removing the prediction', () => {
     const markup = renderResults({ explaining: true })
-    assert.match(markup, /Explaining prediction/)
-    assert.match(markup, /Calculating a local explanation/)
+    assert.match(markup, /Loading explanation/)
+    assert.match(markup, /Loading explanation for this sample/)
     assert.match(markup, /dna-loader--small/)
     assert.match(markup, /Class probabilities/)
   })
@@ -194,18 +194,18 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Final output/)
     assert.match(markup, /\+30\.00 pp/)
     assert.match(markup, /-10\.00 pp/)
-    assert.match(markup, /model evidence, not as an independent clinical diagnosis/)
+    assert.match(markup, /SHAP describes model contributions, not biological causation/)
     assert.match(markup, /Selected-feature-space explanation only/)
     assert.match(markup, /Additivity verified/)
     assert.match(markup, /sm:grid-cols/)
-    assert.doesNotMatch(markup, /Explain prediction/)
+    assert.doesNotMatch(markup, /View explanation/)
   })
 
   it('shows an explanation error while keeping the prediction available', () => {
     const markup = renderResults({ explanationError: 'Reference data unavailable.', explaining: true })
-    assert.match(markup, /Explanation unavailable/)
+    assert.match(markup, /We couldn&#x27;t load this explanation\./)
     assert.match(markup, /Reference data unavailable/)
-    assert.match(markup, /Retrying…/)
+    assert.match(markup, /Retrying/)
     assert.match(markup, /dna-loader--small/)
     assert.match(markup, /Class probabilities/)
   })
@@ -222,14 +222,14 @@ describe('SHAP explanation UI', () => {
     const markup = renderResults({ explanation: incompleteExplanation })
 
     assert.match(markup, /Class probabilities/)
-    assert.match(markup, /No valid sample-specific SHAP drivers were returned/)
+    assert.match(markup, /No valid SHAP drivers returned/)
     assert.doesNotMatch(markup, /Cumulative SHAP waterfall/)
     assert.doesNotMatch(markup, /Reference-background baseline.*0\.0%/)
   })
 
   it('keeps batch results outside the single-sample explanation flow', () => {
     const markup = renderResults({ jsonResult: null, csvResult: { samples_processed: 0, results: [] } })
-    assert.doesNotMatch(markup, /Explain prediction/)
+    assert.doesNotMatch(markup, /View explanation/)
   })
 
   it('offers an explanation action for every batch result, including later samples', () => {
@@ -265,7 +265,7 @@ describe('SHAP explanation UI', () => {
 
     assert.match(markup, /Prediction details/)
     assert.match(markup, /Sample 4/)
-    assert.match(markup, /Model confidence \(predicted-class probability\)/)
+    assert.match(markup, /Model probability/)
     assert.match(markup, /The strongest SHAP contributions toward this class/)
     assert.match(markup, /Technical details/)
     assert.match(markup, /Back to results/)
@@ -291,9 +291,9 @@ describe('SHAP explanation UI', () => {
       explanationError: 'Source mapping unavailable.',
     })
 
-    assert.match(loadingMarkup, /Calculating a local explanation/)
+    assert.match(loadingMarkup, /Loading explanation for this sample/)
     assert.match(loadingMarkup, /ER-negative/)
-    assert.match(errorMarkup, /Explanation unavailable/)
+    assert.match(errorMarkup, /We couldn&#x27;t load this explanation\./)
     assert.match(errorMarkup, /Source mapping unavailable/)
     assert.match(errorMarkup, /Try again/)
   })
@@ -340,8 +340,8 @@ describe('analysis workflow surfaces', () => {
 
     assert.match(header, /Checking API connection/)
     assert.match(selector, /Loading available models/)
-    assert.match(jsonTab, /Prediction in progress/)
-    assert.match(csvTab, /Batch prediction in progress/)
+    assert.match(jsonTab, /Running model/)
+    assert.match(csvTab, /Processing batch/)
     for (const markup of [header, selector, jsonTab, csvTab]) {
       assert.match(markup, /dna-loader--small/)
       assert.doesNotMatch(markup, /animate-spin/)
@@ -368,7 +368,7 @@ describe('analysis workflow surfaces', () => {
         onConfirm: () => {},
       }),
     )
-    assert.match(markup, /Ready to run\?/) 
+    assert.match(markup, /Confirm analysis/)
     assert.match(markup, /patients\.csv/)
     assert.match(markup, /Data format/) 
     assert.match(markup, /Run analysis/)
@@ -379,9 +379,9 @@ describe('analysis workflow surfaces', () => {
     const markup = renderToStaticMarkup(
       React.createElement(AnalysisLoadingOverlay, { mode: 'json' }),
     )
-    assert.match(markup, /Analyzing your data/)
-    assert.match(markup, /Input validation/)
-    assert.match(markup, /Running model prediction/)
+    assert.match(markup, /Running analysis/)
+    assert.match(markup, /Validate data/)
+    assert.match(markup, /Run model/)
     assert.match(markup, /dna-loader--large/)
     assert.doesNotMatch(markup, /dna-loader--small/)
     assert.match(markup, /indeterminate-bar/)
@@ -404,7 +404,7 @@ describe('analysis workflow surfaces', () => {
     assert.match(markup, /Prediction explanation/)
     assert.match(markup, /sample-001/)
     assert.match(markup, /Class probabilities/)
-    assert.match(markup, /Preparing explanation/)
+    assert.match(markup, /Loading explanation/)
     assert.match(markup, /dna-loader--small/)
 
     const unavailable = renderToStaticMarkup(
@@ -418,7 +418,7 @@ describe('analysis workflow surfaces', () => {
         onBack: () => {},
       }),
     )
-    assert.match(unavailable, /Explanation unavailable/)
-    assert.match(unavailable, /Return to analysis/)
+    assert.match(unavailable, /No prediction available/)
+    assert.match(unavailable, /Back to analysis/)
   })
 })
