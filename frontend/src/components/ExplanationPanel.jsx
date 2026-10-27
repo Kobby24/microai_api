@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { fetchGlobalDrivers, extractApiError } from '../api'
-import { contributionWidth, selectContributors } from '../xaiPresentation'
+import { buildWaterfall, selectContributors } from '../xaiPresentation'
 
 function formatValue(value, digits = 4) {
   if (value === null || value === undefined) return '—'
@@ -12,6 +12,13 @@ function formatPercent(value) {
   if (value === null || value === undefined) return '—'
   const numeric = Number(value)
   return Number.isFinite(numeric) ? `${numeric.toFixed(1)}%` : '—'
+}
+
+function formatContribution(value) {
+  const numeric = Number(value) * 100
+  if (!Number.isFinite(numeric)) return '— pp'
+  const rounded = Number(numeric.toFixed(2))
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)} pp`
 }
 
 function expressionLevel(value) {
@@ -29,10 +36,10 @@ function driverName(feature) {
   return feature.gene_symbol || feature.feature_id
 }
 
-function directionLabel(value, explainedClassLabel, otherClassLabel) {
+function directionLabel(value, explainedClassLabel) {
   const numeric = Number(value)
   if (numeric > 0) return `Toward ${explainedClassLabel}`
-  if (numeric < 0) return otherClassLabel ? `Toward ${otherClassLabel}` : `Away from ${explainedClassLabel}`
+  if (numeric < 0) return `Away from ${explainedClassLabel}`
   return 'No directional contribution'
 }
 
@@ -58,61 +65,7 @@ function buildSummary(explanation, drivers) {
     : `The model predicts ${explanation.explained_class_label}. The largest returned SHAP contributions were ${descriptions.join(' and ')}.`
 }
 
-function DriverRow({ feature, maxAbs, explainedClassLabel, otherClassLabel, positiveSide }) {
-  const value = Number(feature.shap_value)
-  const towardExplained = value > 0
-  const side = towardExplained
-    ? positiveSide === 'left' ? 'left' : 'right'
-    : positiveSide === 'left' ? 'right' : 'left'
-  const width = `${contributionWidth(value, maxAbs)}%`
-  const level = feature.expression_level || expressionLevel(feature.model_input_value)
-  const direction = directionLabel(value, explainedClassLabel, otherClassLabel)
-
-  return (
-    <li className="grid grid-cols-[minmax(7rem,0.9fr)_minmax(8rem,1.7fr)_minmax(7rem,0.9fr)] items-center gap-2 border-b border-slate-100 py-3 last:border-b-0 sm:gap-4">
-      <div className={`min-w-0 ${side === 'left' ? 'order-1 text-right' : 'order-3 text-left'}`}>
-        <p className="truncate text-sm font-semibold text-slate-900" title={driverName(feature)}>
-          {driverName(feature)}
-        </p>
-        {feature.gene_symbol && (
-          <p className="truncate font-mono text-[11px] text-slate-500" title={feature.feature_id}>
-            {feature.feature_id}
-          </p>
-        )}
-        <p className="mt-1 text-[11px] text-slate-600">{level}</p>
-      </div>
-
-      <div className="order-2 min-w-0">
-        <div
-          className="grid h-5 grid-cols-[1fr_2px_1fr] items-center"
-          role="img"
-          aria-label={`${direction}, SHAP contribution ${value > 0 ? '+' : ''}${formatValue(value)}`}
-        >
-          <div className="flex h-full items-center justify-end border-r border-slate-400">
-            {side === 'left' && (
-              <div className="h-3 rounded-l-sm bg-[#2f7b78]" style={{ width }} />
-            )}
-          </div>
-          <div className="h-full bg-slate-400" />
-          <div className="flex h-full items-center border-l border-slate-400">
-            {side === 'right' && (
-              <div className="h-3 rounded-r-sm bg-[#c56b36]" style={{ width }} />
-            )}
-          </div>
-        </div>
-        <p className="mt-1 text-center text-[10px] text-slate-500">
-          {formatPercent(feature.relative_influence_percent)} relative influence
-        </p>
-      </div>
-
-      <p className={`order-4 col-span-3 text-center text-[11px] text-slate-500 sm:col-span-1 ${side === 'left' ? 'sm:text-left' : 'sm:text-right'}`}>
-        {direction}
-      </p>
-    </li>
-  )
-}
-
-function TechnicalDetails({ features, explainedClassLabel, otherClassLabel }) {
+function TechnicalDetails({ features, explainedClassLabel }) {
   if (!features.length) {
     return <p className="mt-3 text-sm text-slate-500">No technical feature values are available.</p>
   }
@@ -140,7 +93,7 @@ function TechnicalDetails({ features, explainedClassLabel, otherClassLabel }) {
             SHAP <span className="font-mono">{Number(feature.shap_value) > 0 ? '+' : ''}{formatValue(feature.shap_value)}</span>
           </p>
           <p className="text-slate-600">
-            {directionLabel(feature.shap_value, explainedClassLabel, otherClassLabel)}
+            {directionLabel(feature.shap_value, explainedClassLabel)}
             <span className="block text-slate-500">
               Top-driver relative influence {formatPercent(feature.relative_influence_percent)}
             </span>
@@ -148,6 +101,218 @@ function TechnicalDetails({ features, explainedClassLabel, otherClassLabel }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+function ExpressionIndicator({ feature }) {
+  const value = Number(feature.model_input_value)
+  const position = Number.isFinite(value) ? Math.max(0, Math.min(100, ((value + 3) / 6) * 100)) : 50
+
+  return (
+    <div className="mt-3" aria-label={`Standardized expression ${formatValue(feature.model_input_value)} relative to the model reference`}>
+      <p className="text-[10px] font-medium text-slate-600">Expression relative to model reference</p>
+      <div className="relative mt-2 h-2 rounded-full bg-gradient-to-r from-[#c8dfd8] via-[#e8ece8] to-[#e9cbb9]">
+        <span className="absolute -top-1 h-4 w-1 rounded bg-slate-900" style={{ left: `${position}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[9px] text-slate-500">
+        <span>Lower</span><span>Reference center</span><span>Higher</span>
+      </div>
+    </div>
+  )
+}
+
+function WaterfallChart({ waterfall, explainedClassLabel, selectedFeatureId, hoveredFeatureId, onSelectFeature, onHoverFeature }) {
+  const chart = waterfall.steps
+  const values = chart.flatMap((step) => [step.start, step.end])
+  const rawMin = Math.min(...values)
+  const rawMax = Math.max(...values)
+  const padding = Math.max((rawMax - rawMin) * 0.18, 0.003)
+  const domainMin = Math.max(0, rawMin - padding)
+  const domainMax = Math.min(1, rawMax + padding)
+  const plotTop = 26
+  const plotBottom = 218
+  const plotHeight = plotBottom - plotTop
+  const marginLeft = 58
+  const slotWidth = 112
+  const chartWidth = Math.max(720, marginLeft + 26 + chart.length * slotWidth)
+  const chartHeight = 326
+  const y = (value) => plotBottom - ((value - domainMin) / (domainMax - domainMin)) * plotHeight
+  const ticks = [domainMin, (domainMin + domainMax) / 2, domainMax]
+  const x = (index) => marginLeft + index * slotWidth + slotWidth / 2
+  const activeFeatureId = hoveredFeatureId || selectedFeatureId
+  const selectedDetails = chart.find((step) => step.type === 'feature' && step.feature.feature_id === activeFeatureId)
+
+  return (
+    <>
+      <div className="mt-4 max-w-full overflow-x-auto overscroll-x-contain rounded-md border border-slate-200 bg-white" tabIndex={0} aria-label="Scrollable waterfall chart">
+        <svg
+          className="block"
+          width={chartWidth}
+          height={chartHeight}
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          role="group"
+          aria-label={`Cumulative SHAP waterfall from reference probability ${formatPercent(waterfall.baseline * 100)} to final prediction ${formatPercent(waterfall.finalOutput * 100)}`}
+        >
+          {ticks.map((tick, index) => {
+            const tickY = y(tick)
+            return (
+              <g key={index} aria-hidden="true">
+                <line x1={marginLeft - 7} x2={chartWidth - 14} y1={tickY} y2={tickY} stroke="#e2e8f0" strokeDasharray={index === 0 ? undefined : '3 5'} />
+                <text x={marginLeft - 11} y={tickY + 3} textAnchor="end" fill="#64748b" fontSize="9">{formatPercent(tick * 100)}</text>
+              </g>
+            )
+          })}
+          {chart.map((step, index) => {
+            const centerX = x(index)
+            const isTotal = step.type === 'reference' || step.type === 'final'
+            const isPositive = step.value >= 0
+            const fill = step.type === 'final'
+              ? '#174b48'
+              : step.type === 'reference'
+                ? '#64748b'
+                : step.type === 'remainder'
+                  ? '#a1aab2'
+                  : isPositive ? '#2f7b78' : '#c56b36'
+            const top = isTotal ? y(step.value) : Math.min(y(step.start), y(step.end))
+            const rawHeight = isTotal ? plotBottom - top : Math.abs(y(step.start) - y(step.end))
+            const barHeight = Math.max(rawHeight, 2)
+            const barY = rawHeight < 2 && !isTotal ? top - 1 : top
+            const previous = chart[index - 1]
+            const isInteractive = step.type === 'feature'
+            const ariaLabel = step.type === 'feature'
+              ? `${driverName(step.feature)}, probe ${step.feature.feature_id}, ${step.feature.expression_level || expressionLevel(step.feature.model_input_value)}, ${formatContribution(step.value)}, ${directionLabel(step.value, explainedClassLabel)}`
+              : `${step.label}, ${formatPercent(step.value * 100)}`
+
+            return (
+              <g
+                key={`${step.type}-${step.feature?.feature_id || index}`}
+                role={isInteractive ? 'button' : undefined}
+                tabIndex={isInteractive ? 0 : undefined}
+                aria-label={isInteractive ? ariaLabel : undefined}
+                onClick={isInteractive ? () => onSelectFeature(step.feature.feature_id) : undefined}
+                onMouseEnter={isInteractive ? () => onHoverFeature(step.feature.feature_id) : undefined}
+                onMouseLeave={isInteractive ? () => onHoverFeature(null) : undefined}
+                onFocus={isInteractive ? () => onHoverFeature(step.feature.feature_id) : undefined}
+                onBlur={isInteractive ? () => onHoverFeature(null) : undefined}
+                onKeyDown={isInteractive ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onSelectFeature(step.feature.feature_id)
+                  }
+                } : undefined}
+                className={isInteractive ? 'cursor-pointer' : undefined}
+              >
+                {previous && (
+                  <line x1={x(index - 1) + 20} x2={centerX - 20} y1={y(previous.end)} y2={y(previous.end)} stroke="#94a3b8" strokeDasharray="3 3" />
+                )}
+                <rect
+                  x={centerX - (step.type === 'final' ? 23 : 17)}
+                  y={barY}
+                  width={step.type === 'final' ? 46 : 34}
+                  height={barHeight}
+                  rx="2"
+                  fill={fill}
+                  stroke={isInteractive && selectedFeatureId === step.feature.feature_id ? '#0f172a' : 'none'}
+                  strokeWidth="2"
+                >
+                  <title>{ariaLabel}</title>
+                </rect>
+                {step.type === 'feature' && (
+                  <text x={centerX} y={Math.max(plotTop + 12, Math.min(y(step.start), y(step.end)) - 7)} textAnchor="middle" fill={isPositive ? '#1f5f5c' : '#9a4528'} fontSize="10" fontWeight="700">
+                    {formatContribution(step.value)}
+                  </text>
+                )}
+                <text x={centerX} y="239" textAnchor="middle" fill={step.type === 'final' ? '#174b48' : '#334155'} fontSize="10" fontWeight={step.type === 'final' ? '700' : '600'}>
+                  {step.type === 'feature' ? driverName(step.feature) : step.type === 'remainder' ? step.label : step.type === 'reference' ? 'Reference' : 'Final output'}
+                </text>
+                <text x={centerX} y="253" textAnchor="middle" fill="#64748b" fontSize="8.5" fontFamily="monospace">
+                  {step.type === 'feature' ? step.feature.feature_id : step.type === 'remainder' ? `${step.featureCount} undisplayed` : step.type === 'reference' ? 'background' : explainedClassLabel}
+                </text>
+                {step.type === 'feature' && (
+                  <text x={centerX} y="267" textAnchor="middle" fill="#64748b" fontSize="8">
+                    {step.feature.expression_level || expressionLevel(step.feature.model_input_value)}
+                  </text>
+                )}
+                <text x={centerX} y="289" textAnchor="middle" fill={step.type === 'final' ? '#174b48' : '#334155'} fontSize={step.type === 'final' ? '13' : '10'} fontWeight={step.type === 'final' ? '700' : '600'}>
+                  {step.type === 'feature' || step.type === 'remainder' ? formatContribution(step.value) : formatPercent(step.value * 100)}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600" aria-label="Contribution direction legend">
+        <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-[#2f7b78]" aria-hidden="true" />Positive · toward {explainedClassLabel}</span>
+        <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-[#c56b36]" aria-hidden="true" />Negative · away from {explainedClassLabel}</span>
+      </div>
+      {selectedDetails && (
+        <div className="mt-3 max-w-xl border-l-2 border-[#2f7b78] bg-[#f7faf9] px-4 py-3" aria-live="polite">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="font-semibold text-slate-900">{driverName(selectedDetails.feature)}</p>
+            <p className="font-mono text-sm font-semibold text-slate-800">{formatContribution(selectedDetails.value)}</p>
+          </div>
+          <p className="mt-1 font-mono text-xs text-slate-500">Probe: {selectedDetails.feature.feature_id}</p>
+          <p className="mt-2 text-xs text-slate-600">Expression: {selectedDetails.feature.expression_level || expressionLevel(selectedDetails.feature.model_input_value)}</p>
+          <p className="mt-1 text-xs text-slate-600">Direction: {directionLabel(selectedDetails.value, explainedClassLabel)}</p>
+          <ExpressionIndicator feature={selectedDetails.feature} />
+        </div>
+      )}
+    </>
+  )
+}
+
+function ContributionFallback({ drivers, features, explainedClassLabel }) {
+  const displayedIds = new Set(drivers.map((feature) => feature.feature_id))
+  const remainderFeatures = features.filter((feature) => !displayedIds.has(feature.feature_id))
+  const remainder = remainderFeatures.reduce((sum, feature) => sum + Number(feature.shap_value), 0)
+  const maxAbs = Math.max(0, ...drivers.map((feature) => Math.abs(Number(feature.shap_value))), Math.abs(remainder))
+  const rows = [
+    ...drivers.map((feature) => ({
+      feature,
+      label: driverName(feature),
+      detail: feature.feature_id,
+      value: Number(feature.shap_value),
+      expression: feature.expression_level || expressionLevel(feature.model_input_value),
+    })),
+    ...(remainderFeatures.length ? [{
+      label: `Other ${remainderFeatures.length} ${remainderFeatures.length === 1 ? 'feature' : 'features'}`,
+      detail: 'Undisplayed selected features',
+      value: remainder,
+      expression: '',
+    }] : []),
+  ]
+
+  return (
+    <div className="mt-4 max-w-3xl">
+      <ul className="divide-y divide-slate-100">
+        {rows.map((row, index) => {
+          const value = row.value
+          const positive = value >= 0
+          const width = maxAbs > 0 ? Math.abs(value) / maxAbs * 48 : 0
+          return (
+            <li key={row.feature?.feature_id || `remainder-${index}`} className="grid grid-cols-[minmax(5rem,1fr)_minmax(7rem,1.4fr)_5.5rem] items-center gap-3 py-3">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-slate-800">{row.label}</span>
+                <span className="block truncate font-mono text-[10px] text-slate-500">{row.detail}</span>
+                {row.expression && <span className="block text-[10px] text-slate-500">{row.expression}</span>}
+              </span>
+              <span className="grid h-4 grid-cols-2 items-center" aria-hidden="true">
+                <span className="flex h-full items-center justify-end border-r border-slate-400">
+                  {!positive && <span className="h-2 rounded-l-sm bg-[#c56b36]" style={{ width: `${width}%` }} />}
+                </span>
+                <span className="flex h-full items-center border-l border-slate-400">
+                  {positive && <span className="h-2 rounded-r-sm bg-[#2f7b78]" style={{ width: `${width}%` }} />}
+                </span>
+              </span>
+              <span className="text-right font-mono text-xs font-semibold text-slate-800">
+                {formatContribution(value)}
+                <span className="block font-sans text-[9px] font-normal text-slate-500">{directionLabel(value, explainedClassLabel)}</span>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
@@ -226,7 +391,8 @@ function GlobalDriversSection({ model }) {
 }
 
 export default function ExplanationPanel({ explanation, model }) {
-  const [showAllDrivers, setShowAllDrivers] = useState(false)
+  const [selectedFeatureId, setSelectedFeatureId] = useState(null)
+  const [hoveredFeatureId, setHoveredFeatureId] = useState(null)
   const selected = selectContributors(explanation.features, 8)
   const returnedDrivers = Array.isArray(explanation.drivers)
     ? explanation.drivers
@@ -234,16 +400,6 @@ export default function ExplanationPanel({ explanation, model }) {
   const drivers = returnedDrivers
     .slice()
     .sort((left, right) => Math.abs(Number(right.shap_value)) - Math.abs(Number(left.shap_value)))
-  const maxAbs = drivers.reduce(
-    (maximum, feature) => Math.max(maximum, Math.abs(Number(feature.shap_value))),
-    0,
-  )
-  const classKeys = Object.keys(explanation.class_probabilities || {})
-  const otherClassKey = classKeys.find((classKey) => classKey !== explanation.explained_class)
-  const otherClassLabel = model?.label_meanings?.[otherClassKey] || otherClassKey
-  const classOrder = model?.classes?.length ? model.classes.map(String) : classKeys
-  const explainedIndex = classOrder.indexOf(String(explanation.explained_class))
-  const positiveSide = explainedIndex === 0 ? 'left' : 'right'
   const technicalFeatures = selected.all.map((feature) => {
     const enriched = explanation.features.find((item) => item.feature_id === feature.feature_id)
     const driver = drivers.find((item) => item.feature_id === feature.feature_id)
@@ -254,9 +410,9 @@ export default function ExplanationPanel({ explanation, model }) {
     }
   })
   const hasBaselineValues = explanation.base_value != null && explanation.predicted_output != null
-  const baseline = hasBaselineValues ? Number(explanation.base_value) : Number.NaN
-  const predictedOutput = hasBaselineValues ? Number(explanation.predicted_output) : Number.NaN
-  const hasBaseline = Number.isFinite(baseline) && Number.isFinite(predictedOutput)
+    && Number.isFinite(Number(explanation.base_value))
+    && Number.isFinite(Number(explanation.predicted_output))
+  const waterfall = buildWaterfall(explanation, 8)
   const residualValue = explanation.metadata.additivity_residual
   const toleranceValue = explanation.metadata.additivity_tolerance
   const additivityAvailable = residualValue != null
@@ -266,12 +422,7 @@ export default function ExplanationPanel({ explanation, model }) {
   const additivityPassed = additivityAvailable
     && explanation.metadata.additivity_verified
     && Math.abs(Number(residualValue)) <= Number(toleranceValue)
-  const visibleDrivers = showAllDrivers ? drivers : drivers.slice(0, 5)
-  const hiddenDriverCount = Math.max(0, drivers.length - visibleDrivers.length)
   const explainedLabel = explanation.explained_class_label
-  const otherLabel = otherClassLabel || 'other class'
-  const leftLabel = positiveSide === 'left' ? explainedLabel : otherLabel
-  const rightLabel = positiveSide === 'right' ? explainedLabel : otherLabel
 
   return (
     <section className="mt-7 border-t border-slate-200 pt-7" aria-labelledby="explanation-heading">
@@ -286,64 +437,51 @@ export default function ExplanationPanel({ explanation, model }) {
         <p className="mt-3 text-base leading-7 text-slate-700">{buildSummary(explanation, drivers)}</p>
       </div>
 
-      <div className="mt-6 border-y border-slate-200 py-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 className="text-sm font-semibold text-slate-900">Reference context</h4>
-          <p className="text-xs text-slate-500">Secondary model-output context</p>
-        </div>
-        {hasBaseline ? (
-          <p className="mt-2 text-sm text-slate-600">
-            Reference-background baseline for {explainedLabel}: <span className="font-mono tabular-nums">{formatPercent(baseline * 100)}</span>
-            <span className="mx-2 text-slate-400" aria-hidden="true">→</span>
-            this sample <span className="font-mono font-semibold tabular-nums text-slate-900">{formatPercent(predictedOutput * 100)}</span>
-          </p>
-        ) : (
-          <p className="mt-2 text-xs text-slate-500">A verified reference-background baseline is not available for this explanation.</p>
-        )}
-        {!classKeys.some((classKey) => explanation.class_probabilities[classKey] != null && Number.isFinite(Number(explanation.class_probabilities[classKey]))) && (
-          <p className="mt-2 text-xs text-slate-500">Probability unavailable in the explanation response; the prediction page remains the source for model probabilities.</p>
-        )}
-      </div>
-
       <div className="mt-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="eyebrow">Main evidence</p>
-            <h4 className="mt-2 text-xl font-semibold text-slate-950">What influenced this prediction?</h4>
+            <p className="eyebrow">How the model arrived at this prediction</p>
+            <h4 className="mt-2 text-xl font-semibold text-slate-950">Reference to final model output</h4>
           </div>
-          <p className="text-xs text-slate-500">Sample-specific SHAP drivers</p>
+          <p className="text-xs text-slate-500">Contribution to model output · percentage points (pp)</p>
         </div>
         {drivers.length ? (
           <>
-            <div className="mt-5 grid grid-cols-3 items-center gap-2 text-[11px] font-semibold text-slate-500 sm:gap-4">
-              <span className="text-right">Toward {leftLabel}</span>
-              <span className="text-center text-slate-400">Zero contribution</span>
-              <span>Toward {rightLabel}</span>
-            </div>
-            <ul className="mt-1 divide-y divide-slate-100" aria-label="Feature influences">
-              {visibleDrivers.map((feature) => (
-                <DriverRow
-                  key={feature.feature_id}
-                  feature={feature}
-                  maxAbs={maxAbs}
+            {waterfall ? (
+              <WaterfallChart
+                waterfall={waterfall}
+                explainedClassLabel={explainedLabel}
+                selectedFeatureId={selectedFeatureId}
+                hoveredFeatureId={hoveredFeatureId}
+                onSelectFeature={setSelectedFeatureId}
+                onHoverFeature={setHoveredFeatureId}
+              />
+            ) : (
+              <>
+                {hasBaselineValues && (
+                  <p className="mt-3 text-sm text-amber-800" role="alert">
+                    The SHAP contributions do not reconcile with the reported final probability, so an additive waterfall is withheld.
+                  </p>
+                )}
+                {!hasBaselineValues && (
+                  <p className="mt-3 text-sm text-slate-600">A verified reference baseline is unavailable. These signed contributions are shown without a cumulative baseline.</p>
+                )}
+                <ContributionFallback
+                  drivers={drivers.slice(0, 8)}
+                  features={selected.all}
                   explainedClassLabel={explainedLabel}
-                  otherClassLabel={otherLabel}
-                  positiveSide={positiveSide}
                 />
-              ))}
-            </ul>
-            {hiddenDriverCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowAllDrivers((visible) => !visible)}
-                className="mt-4 text-sm font-semibold text-[#1f5f5c] hover:underline"
-              >
-                {showAllDrivers ? 'Show fewer drivers' : `View all ${drivers.length} influencing features`}
-              </button>
+              </>
             )}
-            <div className="mt-5 rounded-md border border-[#dce5e7] bg-[#f7faf9] p-4 text-sm leading-6 text-slate-600">
+            <div className="mt-5 border-t border-slate-200 pt-4 text-sm leading-6 text-slate-600">
               <p className="font-semibold text-slate-800">How to read this</p>
-              <p className="mt-1">Each bar shows how strongly a feature influenced this sample&apos;s prediction. Direction comes from the feature&apos;s SHAP contribution to the explained class. This describes model behavior; it does not establish biological causation.</p>
+              <p className="mt-1">
+                {waterfall
+                  ? `The waterfall starts at the model's reference-background prediction and adds each feature contribution to reach the final output. Positive and negative steps move toward or away from ${explainedLabel}. These features describe model behavior; they do not establish biological causation.`
+                  : hasBaselineValues
+                    ? `The returned SHAP values do not reconcile with the final output, so a cumulative path is withheld. Signed contributions are shown without altering the endpoint. These features describe model behavior; they do not establish biological causation.`
+                    : `Signed contributions are shown without a reference baseline, so no cumulative path is implied. Positive and negative values move toward or away from ${explainedLabel}. These features describe model behavior; they do not establish biological causation.`}
+              </p>
             </div>
           </>
         ) : (
@@ -358,7 +496,7 @@ export default function ExplanationPanel({ explanation, model }) {
 
       <details className="mt-5 border-t border-slate-200 pt-4">
         <summary className="cursor-pointer text-sm font-semibold text-slate-800">
-          Show technical details
+          Technical details
         </summary>
         <div className="mt-3 grid gap-2 border-b border-slate-200 pb-3 text-xs text-slate-600 sm:grid-cols-3">
           <p>Reference samples <span className="font-mono">{explanation.metadata.background_samples}</span></p>
@@ -376,7 +514,6 @@ export default function ExplanationPanel({ explanation, model }) {
         <TechnicalDetails
           features={technicalFeatures}
           explainedClassLabel={explanation.explained_class_label}
-          otherClassLabel={otherClassLabel}
         />
       </details>
 

@@ -29,6 +29,82 @@ export function contributionWidth(value, maxAbs) {
   return Math.min(100, (Math.abs(Number(value)) / maxAbs) * 100)
 }
 
+export function buildWaterfall(explanation, displayLimit = 8) {
+  if (
+    explanation?.output !== 'calibrated_class_probability'
+    || explanation.base_value == null
+    || explanation.predicted_output == null
+    || !Array.isArray(explanation.features)
+    || !explanation.features.length
+    || !Number.isInteger(displayLimit)
+    || displayLimit < 1
+  ) {
+    return null
+  }
+
+  const baseline = Number(explanation.base_value)
+  const finalOutput = Number(explanation.predicted_output)
+  const features = explanation.features
+  if (
+    !Number.isFinite(baseline)
+    || !Number.isFinite(finalOutput)
+    || features.some((feature) => (
+      typeof feature?.feature_id !== 'string'
+      || !Number.isFinite(Number(feature.shap_value))
+    ))
+  ) {
+    return null
+  }
+
+  const featuresById = new Map(features.map((feature) => [feature.feature_id, feature]))
+  if (featuresById.size !== features.length) return null
+
+  const orderedDrivers = Array.isArray(explanation.drivers) && explanation.drivers.length
+    ? explanation.drivers
+    : features.slice().sort((left, right) => Math.abs(Number(right.shap_value)) - Math.abs(Number(left.shap_value)))
+  const displayed = []
+  const displayedIds = new Set()
+  for (const driver of orderedDrivers) {
+    const feature = featuresById.get(driver?.feature_id)
+    if (!feature || displayedIds.has(feature.feature_id)) continue
+    displayed.push(feature)
+    displayedIds.add(feature.feature_id)
+    if (displayed.length === displayLimit) break
+  }
+  if (!displayed.length) return null
+
+  const remainderFeatures = features.filter((feature) => !displayedIds.has(feature.feature_id))
+  const remainder = remainderFeatures.reduce((sum, feature) => sum + Number(feature.shap_value), 0)
+  const featureTotal = features.reduce((sum, feature) => sum + Number(feature.shap_value), baseline)
+  const closureError = featureTotal - finalOutput
+  if (!Number.isFinite(remainder) || Math.abs(closureError) > 1e-7) return null
+
+  let cumulative = baseline
+  const steps = [
+    { type: 'reference', label: 'Reference background', value: baseline, start: baseline, end: baseline },
+  ]
+  for (const feature of displayed) {
+    const start = cumulative
+    cumulative += Number(feature.shap_value)
+    steps.push({ type: 'feature', feature, label: feature.gene_symbol || feature.feature_id, value: Number(feature.shap_value), start, end: cumulative })
+  }
+  if (remainderFeatures.length) {
+    const start = cumulative
+    cumulative += remainder
+    steps.push({
+      type: 'remainder',
+      label: `Other ${remainderFeatures.length} ${remainderFeatures.length === 1 ? 'feature' : 'features'}`,
+      featureCount: remainderFeatures.length,
+      value: remainder,
+      start,
+      end: cumulative,
+    })
+  }
+  steps.push({ type: 'final', label: 'Final model output', value: finalOutput, start: finalOutput, end: finalOutput })
+
+  return { baseline, finalOutput, steps, closureError, featureCount: features.length }
+}
+
 export function isExplanationForPrediction(explanation, model, prediction) {
   if (
     !explanation

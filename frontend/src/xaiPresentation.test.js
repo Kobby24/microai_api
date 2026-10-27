@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  buildWaterfall,
   contributionDirection,
   contributionWidth,
   isExplanationForPrediction,
@@ -8,6 +9,46 @@ import {
 } from './xaiPresentation.js'
 
 describe('SHAP contribution presentation', () => {
+  it('builds a cumulative probability waterfall with every undisplayed feature in the remainder', () => {
+    const explanation = {
+      output: 'calibrated_class_probability',
+      base_value: 0.924,
+      predicted_output: 0.943,
+      drivers: [
+        { feature_id: 'p1', shap_value: 0.009 },
+        { feature_id: 'p2', shap_value: -0.004 },
+      ],
+      features: [
+        { feature_id: 'p1', gene_symbol: 'TMLHE', shap_value: 0.009 },
+        { feature_id: 'p2', gene_symbol: 'PGBD5', shap_value: -0.004 },
+        { feature_id: 'p3', shap_value: 0.007 },
+        { feature_id: 'p4', shap_value: 0.007 },
+      ],
+    }
+
+    const waterfall = buildWaterfall(explanation, 2)
+    const contributions = waterfall.steps
+      .filter((step) => step.type === 'feature' || step.type === 'remainder')
+      .reduce((sum, step) => sum + step.value, 0)
+
+    assert.equal(waterfall.steps[0].value, 0.924)
+    assert.equal(waterfall.steps.at(-2).label, 'Other 2 features')
+    assert.equal(waterfall.steps.at(-2).value, 0.014)
+    assert.equal(waterfall.steps.at(-1).value, 0.943)
+    assert.ok(Math.abs(waterfall.baseline + contributions - waterfall.finalOutput) < 1e-12)
+  })
+
+  it('does not construct a waterfall when actual feature values do not close to the output', () => {
+    const explanation = {
+      output: 'calibrated_class_probability',
+      base_value: 0.5,
+      predicted_output: 0.8,
+      features: [{ feature_id: 'p1', shap_value: 0.2 }],
+    }
+
+    assert.equal(buildWaterfall(explanation), null)
+  })
+
   it('selects the strongest positive and negative contributors separately', () => {
     const features = [
       { feature_id: 'p1', shap_value: 0.2 },
