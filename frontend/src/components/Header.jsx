@@ -6,7 +6,7 @@ export default function Header({ apiStatus, model, workflowStep }) {
     apiStatus === 'ok'
       ? 'API connected'
       : apiStatus === 'loading'
-        ? 'Checking API…'
+        ? 'Checking API'
         : 'API unreachable'
 
   const statusColor = apiStatus === 'ok' ? 'bg-blue-600' : 'bg-red-500'
@@ -23,7 +23,7 @@ export default function Header({ apiStatus, model, workflowStep }) {
               MicroAI
             </h1>
             <p className="text-xs text-slate-500">
-              AI-assisted gene expression analysis
+              Gene expression analysis
             </p>
           </div>
         </div>

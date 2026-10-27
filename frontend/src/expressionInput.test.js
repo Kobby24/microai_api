@@ -33,7 +33,7 @@ describe('identifier-labelled expression input', () => {
         '[{"feature_id":"g1","value":1},{"feature_id":"g2","value":2},{"feature_id":"other","value":3}]',
         featureIds,
       ),
-      /Include each required/,
+      /Include every required/,
     )
   })
 

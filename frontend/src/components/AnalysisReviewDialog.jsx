@@ -24,9 +24,8 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
       <section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title">
         <div className="flex items-start justify-between gap-5 border-b border-slate-200 px-6 py-5">
           <div>
-            <p className="eyebrow">Review analysis</p>
-            <h2 id="review-dialog-title" className="mt-2 text-2xl font-semibold text-slate-950">Ready to run?</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Review your input before MicroAI starts the analysis.</p>
+            <h2 id="review-dialog-title" className="text-2xl font-semibold text-slate-950">Confirm analysis</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Check the model and input details before running.</p>
           </div>
           <button ref={closeButtonRef} type="button" onClick={onCancel} className="icon-button" aria-label="Close review dialog">
             <X className="h-5 w-5" />

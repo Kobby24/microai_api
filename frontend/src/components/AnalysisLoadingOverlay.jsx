@@ -3,19 +3,18 @@ import DnaLoader from './ui/DnaLoader'
 
 export default function AnalysisLoadingOverlay({ mode }) {
   const steps = [
-    { label: 'Input validation', state: 'complete' },
-    { label: 'Feature schema matching', state: 'complete' },
-    { label: mode === 'csv' ? 'Running batch prediction' : 'Running model prediction', state: 'active' },
-    { label: 'Preparing results', state: 'pending' },
+    { label: 'Validate data', state: 'complete' },
+    { label: 'Match feature IDs', state: 'complete' },
+    { label: mode === 'csv' ? 'Run batch prediction' : 'Run model', state: 'active' },
+    { label: 'Prepare results', state: 'pending' },
   ]
 
   return (
     <div className="dialog-backdrop" aria-live="polite">
       <section className="loading-panel" aria-labelledby="analysis-loading-title">
-        <div className="analysis-loading-loader"><DnaLoader size="large" label="Analyzing your data" /></div>
-        <p className="eyebrow">Analysis in progress</p>
-        <h2 id="analysis-loading-title" className="mt-2 text-2xl font-semibold text-slate-950">Analyzing your data</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">MicroAI is validating your input and running the selected model.</p>
+        <div className="analysis-loading-loader"><DnaLoader size="large" label="Running analysis" /></div>
+        <h2 id="analysis-loading-title" className="text-2xl font-semibold text-slate-950">Running analysis</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Validating input and running the selected model.</p>
         <div className="indeterminate-bar mt-6" aria-hidden="true"><span /></div>
         <ul className="mt-6 space-y-3 text-left">
           {steps.map((step) => (
@@ -27,7 +26,6 @@ export default function AnalysisLoadingOverlay({ mode }) {
             </li>
           ))}
         </ul>
-        <p className="mt-6 text-xs text-slate-500">Please wait while the model completes this request.</p>
       </section>
     </div>
   )

@@ -4,20 +4,20 @@ import { buildWaterfall, selectContributors } from '../xaiPresentation'
 import DnaLoader from './ui/DnaLoader'
 
 function formatValue(value, digits = 4) {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined) return 'N/A'
   const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric.toFixed(digits) : '—'
+  return Number.isFinite(numeric) ? numeric.toFixed(digits) : 'N/A'
 }
 
 function formatPercent(value) {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined) return 'N/A'
   const numeric = Number(value)
-  return Number.isFinite(numeric) ? `${numeric.toFixed(1)}%` : '—'
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)}%` : 'N/A'
 }
 
 function formatContribution(value) {
   const numeric = Number(value) * 100
-  if (!Number.isFinite(numeric)) return '— pp'
+  if (!Number.isFinite(numeric)) return 'N/A'
   const rounded = Number(numeric.toFixed(2))
   return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)} pp`
 }
@@ -68,7 +68,7 @@ function buildSummary(explanation, drivers) {
 
 function TechnicalDetails({ features, explainedClassLabel }) {
   if (!features.length) {
-    return <p className="mt-3 text-sm text-slate-500">No technical feature values are available.</p>
+    return <p className="mt-3 text-sm text-slate-500">No feature values available.</p>
   }
 
   return (
@@ -345,25 +345,21 @@ function GlobalDriversSection({ model }) {
         Global model drivers
       </summary>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
-        Model-level importance is separate from this sample&apos;s SHAP explanation. It uses the
-        model&apos;s existing weighted tree feature-importance values and does not describe this
-        individual sample. If the model artifacts do not provide valid finite values, no global
-        drivers are shown.
+        Global importance describes the model overall, not this sample. It uses weighted tree feature importance.
       </p>
       {state.status === 'loading' && (
         <p className="mt-3 flex items-center gap-2 text-sm text-slate-500">
           <DnaLoader size="small" label="Loading global model importance" />
-          Loading global model importance…
+          Loading global importance
         </p>
       )}
       {state.status === 'error' && (
         <p className="mt-3 text-sm text-amber-800" role="status">
-          Global model importance is currently unavailable; no sample-specific SHAP values are
-          substituted. {state.error}
+          {state.error}
         </p>
       )}
       {state.status === 'success' && !state.result.drivers?.length && (
-        <p className="mt-3 text-sm text-slate-500">No valid global model drivers are available.</p>
+        <p className="mt-3 text-sm text-slate-500">No global drivers available.</p>
       )}
       {state.status === 'success' && state.result.drivers?.length > 0 && (
         <ul className="mt-3 space-y-3">
@@ -431,12 +427,11 @@ export default function ExplanationPanel({ explanation, model }) {
   return (
     <section className="mt-7 border-t border-slate-200 pt-7" aria-labelledby="explanation-heading">
       <div className="max-w-2xl">
-        <p className="eyebrow">Why this prediction?</p>
         <h3 id="explanation-heading" className="mt-2 font-display text-2xl font-semibold text-slate-950">
-          Why did the model make this prediction?
+          What influenced this prediction?
         </h3>
         <p className="mt-2 text-xs text-slate-500">
-          {explanation.model_name.toUpperCase()} · {explanation.metadata.method.replaceAll('_', ' ')}
+          {explanation.model_name.toUpperCase()} sample explanation
         </p>
         <p className="mt-3 text-base leading-7 text-slate-700">{buildSummary(explanation, drivers)}</p>
       </div>
@@ -444,8 +439,7 @@ export default function ExplanationPanel({ explanation, model }) {
       <div className="mt-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="eyebrow">How the model arrived at this prediction</p>
-            <h4 className="mt-2 text-xl font-semibold text-slate-950">Reference to final model output</h4>
+            <h4 className="text-xl font-semibold text-slate-950">Reference to final output</h4>
           </div>
           <p className="text-xs text-slate-500">Contribution to model output · percentage points (pp)</p>
         </div>
@@ -464,11 +458,11 @@ export default function ExplanationPanel({ explanation, model }) {
               <>
                 {hasBaselineValues && (
                   <p className="mt-3 text-sm text-amber-800" role="alert">
-                    The SHAP contributions do not reconcile with the reported final probability, so an additive waterfall is withheld.
+                    SHAP values do not reconcile with the final output. No cumulative waterfall is shown.
                   </p>
                 )}
                 {!hasBaselineValues && (
-                  <p className="mt-3 text-sm text-slate-600">A verified reference baseline is unavailable. These signed contributions are shown without a cumulative baseline.</p>
+                  <p className="mt-3 text-sm text-slate-600">Reference probability unavailable. Contributions are shown without a cumulative baseline.</p>
                 )}
                 <ContributionFallback
                   drivers={drivers.slice(0, 8)}
@@ -478,24 +472,18 @@ export default function ExplanationPanel({ explanation, model }) {
               </>
             )}
             <div className="mt-5 border-t border-slate-200 pt-4 text-sm leading-6 text-slate-600">
-              <p className="font-semibold text-slate-800">How to read this</p>
               <p className="mt-1">
                 {waterfall
-                  ? `The waterfall starts at the model's reference-background prediction and adds each feature contribution to reach the final output. Positive and negative steps move toward or away from ${explainedLabel}. These features describe model behavior; they do not establish biological causation.`
+                  ? `Each step adds one feature's SHAP contribution to the reference probability. Positive values move toward ${explainedLabel}; negative values move away. SHAP describes model contributions, not biological causation.`
                   : hasBaselineValues
-                    ? `The returned SHAP values do not reconcile with the final output, so a cumulative path is withheld. Signed contributions are shown without altering the endpoint. These features describe model behavior; they do not establish biological causation.`
-                    : `Signed contributions are shown without a reference baseline, so no cumulative path is implied. Positive and negative values move toward or away from ${explainedLabel}. These features describe model behavior; they do not establish biological causation.`}
+                    ? 'SHAP values do not reconcile with the final output, so no cumulative path is shown. Contributions remain in individual rows. SHAP describes model contributions, not biological causation.'
+                    : 'No reference probability is available, so contributions are shown without a cumulative baseline. SHAP describes model contributions, not biological causation.'}
               </p>
             </div>
           </>
         ) : (
-          <p className="mt-3 text-sm text-slate-500">No valid sample-specific SHAP drivers were returned for this explanation.</p>
+          <p className="mt-3 text-sm text-slate-500">No valid SHAP drivers returned.</p>
         )}
-      </div>
-
-      <div className="mt-5 flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-        <span className="mt-0.5 text-base text-[#2f7b78]" aria-hidden="true">ⓘ</span>
-        <p><span className="font-semibold text-slate-800">Important.</span> These features influenced the model&apos;s prediction. They do not establish biological causation or represent an independent clinical diagnosis. Interpret this explanation as model evidence, not as an independent clinical diagnosis.</p>
       </div>
 
       <details className="mt-5 border-t border-slate-200 pt-4">
@@ -508,7 +496,7 @@ export default function ExplanationPanel({ explanation, model }) {
           <p className={additivityPassed ? 'text-emerald-800' : 'text-amber-800'}>
             Additivity {additivityAvailable ? (additivityPassed ? 'verified' : 'outside tolerance') : 'unavailable'}
             <span className="ml-1 font-mono">
-              Δ {additivityAvailable ? Number(residualValue).toExponential(2) : '—'}
+              Residual {additivityAvailable ? Number(residualValue).toExponential(2) : 'N/A'}
             </span>
           </p>
         </div>

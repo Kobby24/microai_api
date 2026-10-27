@@ -27,7 +27,7 @@ export function interpretPrediction(prediction, model) {
     target,
     classLabel,
     raw,
-    summary: `The model's predicted label is ${classLabel}. This is a model output, not an independent clinical assessment.`,
+    summary: `Model prediction: ${classLabel}. This is not an independent clinical diagnosis.`,
   }
 }
 

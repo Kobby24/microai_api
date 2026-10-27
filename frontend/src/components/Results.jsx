@@ -4,9 +4,9 @@ import ExplanationPanel from './ExplanationPanel'
 import DnaLoader from './ui/DnaLoader'
 
 function formatPercent(value) {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined) return 'N/A'
   const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return '—'
+  if (!Number.isFinite(numeric)) return 'N/A'
   return `${(numeric * 100).toFixed(1)}%`
 }
 
@@ -56,14 +56,13 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
           </p>
           <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
             {predictedProbabilityText
-              ? `The model assigns a ${predictedProbabilityText} estimated probability to ${interpretation.classLabel}`
-              : `The model predicts ${interpretation.classLabel}, but its probability data is unavailable`}
+              ? `Model prediction: ${interpretation.classLabel}. Probability: ${predictedProbabilityText}.`
+              : `Model predicts ${interpretation.classLabel}. Probability unavailable.`}
             {predictedProbabilityText && hasOtherProbability
-              ? ` and ${formatPercent(otherEntry[1])} to ${interpretClass(otherEntry[0], model)}.`
+              ? ` Other class (${interpretClass(otherEntry[0], model)}): ${formatPercent(otherEntry[1])}.`
               : predictedProbabilityText && otherEntry
-                ? ' The other class probability is unavailable.'
-                : '.'}{' '}
-            {predictedProbabilityText && 'These are model outputs, not clinical certainty.'}
+                ? ' Other class probability unavailable.'
+                : ''}
           </p>
         </div>
 
@@ -101,7 +100,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
       </div>
 
       <p className="text-xs text-slate-400">
-        Research estimate only. Not a clinical diagnosis or treatment recommendation.
+        Research use only. Not an independent clinical diagnosis.
       </p>
 
       <div className="border-t border-slate-200 pt-4">
@@ -112,14 +111,14 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
             disabled={explaining || !model?.ready}
             className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {explaining ? <DnaLoader size="small" label="Explaining prediction" /> : <Sparkles className="h-4 w-4" />}
-            {explaining ? 'Explaining prediction…' : 'Explain prediction'}
+            {explaining ? <DnaLoader size="small" label="Loading explanation" /> : <Sparkles className="h-4 w-4" />}
+            {explaining ? 'Loading explanation' : 'View explanation'}
           </button>
         )}
 
         {explaining && (
           <p className="mt-2 text-sm text-slate-600" role="status" aria-live="polite">
-            Calculating a local explanation for this sample.
+            Loading explanation for this sample.
           </p>
         )}
 
@@ -127,7 +126,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
           <div className="flex items-start gap-2 text-sm text-red-800" role="alert">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <p className="font-medium">Explanation unavailable</p>
+              <p className="font-medium">We couldn&apos;t load this explanation.</p>
               <p>{explanationError}</p>
               <button
                 type="button"
@@ -136,7 +135,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
                 className="mt-2 inline-flex items-center gap-1.5 font-medium underline underline-offset-2 disabled:opacity-60"
               >
                 {explaining && <DnaLoader size="small" label="Retrying explanation" />}
-                {explaining ? 'Retrying…' : 'Try again'}
+                {explaining ? 'Retrying' : 'Try again'}
               </button>
             </div>
           </div>
@@ -196,7 +195,7 @@ function BatchPredictionDetails({
             </span>
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Model confidence (predicted-class probability):{' '}
+            Model probability:{' '}
             <span className="font-mono font-medium text-slate-800">{formatPercent(row.probability)}</span>
           </p>
         </div>
@@ -224,13 +223,13 @@ function BatchPredictionDetails({
         </div>
       </div>
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
-        These are model outputs for research and decision support, not a standalone clinical diagnosis.
+        Research use only. Not an independent clinical diagnosis.
       </p>
 
       {explaining && (
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-600" role="status" aria-live="polite">
           <DnaLoader size="small" label="Calculating explanation" />
-          Calculating a local explanation for this sample…
+          Loading explanation for this sample.
         </p>
       )}
 
@@ -238,7 +237,7 @@ function BatchPredictionDetails({
         <div className="mt-4 flex items-start gap-2 text-sm text-red-800" role="alert">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">Explanation unavailable</p>
+            <p className="font-medium">We couldn&apos;t load this explanation.</p>
             <p>{explanationError}</p>
             <button
               type="button"
@@ -247,7 +246,7 @@ function BatchPredictionDetails({
               className="mt-2 inline-flex items-center gap-1.5 font-medium underline underline-offset-2 disabled:opacity-60"
             >
               {explaining && <DnaLoader size="small" label="Retrying explanation" />}
-              {explaining ? 'Retrying…' : 'Try again'}
+              {explaining ? 'Retrying' : 'Try again'}
             </button>
           </div>
         </div>
@@ -288,7 +287,7 @@ function CsvResults({
             Analysis complete
           </p>
           <p className="mt-1 text-sm text-slate-600">
-            Successfully processed {result.samples_processed}{' '}
+            Processed {result.samples_processed}{' '}
             {result.samples_processed === 1 ? 'sample' : 'samples'}
             {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}
           </p>
@@ -334,7 +333,7 @@ function CsvResults({
                   {model?.predicts_label || 'Prediction'}
                 </th>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">Model output</th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Confidence</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Model probability</th>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">Explanation</th>
               </tr>
             </thead>
@@ -398,7 +397,7 @@ export default function Results({
 
       {!hasJson && !hasCsv && (
         <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          Prediction output will appear here after a successful request.
+          No results yet. Run an analysis to view model outputs.
         </p>
       )}
 
