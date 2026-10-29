@@ -50,22 +50,22 @@ export default function PredictionExplanationPage({ prediction, model, explanati
     <div className="space-y-7">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-semibold text-[#1f5f5c] hover:underline"><ArrowLeft className="h-4 w-4" />Back to analysis results</button>
       <div>
-        <p className="eyebrow">Prediction explanation</p>
+        <p className="eyebrow">Understand the result</p>
         <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">{sampleLabel}</h2>
-        <p className="mt-2 text-sm text-slate-600">{model?.predicts_label || 'Model prediction'}</p>
+        <p className="mt-2 text-sm text-slate-600">{model?.predicts_label || 'Breast cancer question'}</p>
       </div>
 
       <section className="surface-panel p-6" aria-labelledby="prediction-summary-heading">
-        <p className="eyebrow">Prediction</p>
+        <p className="eyebrow">Result</p>
         <h3 id="prediction-summary-heading" className="mt-2 text-3xl font-semibold text-slate-950">{predictionLabel}</h3>
         <dl className="mt-6 grid gap-5 border-t border-slate-200 pt-5 sm:grid-cols-2">
-          <div><dt className="meta-label">Model output</dt><dd className="mt-1 font-mono text-sm text-slate-800">{prediction.prediction}</dd></div>
-          <div><dt className="meta-label">Model confidence</dt><dd className="mt-1 font-mono text-lg font-semibold text-slate-950">{formatPercent(prediction.probability)}</dd></div>
+          <div><dt className="meta-label">Sample</dt><dd className="mt-1 font-mono text-sm text-slate-800">{sampleLabel}</dd></div>
+          <div><dt className="meta-label">How strongly the result is supported</dt><dd className="mt-1 font-mono text-lg font-semibold text-slate-950">{formatPercent(prediction.probability)}</dd></div>
         </dl>
       </section>
 
       <section className="surface-panel p-6" aria-labelledby="probability-heading">
-        <h3 id="probability-heading" className="text-lg font-semibold text-slate-950">Class probabilities</h3>
+        <h3 id="probability-heading" className="text-lg font-semibold text-slate-950">How strongly the result is supported</h3>
         <div className="mt-5"><ProbabilityList prediction={prediction} model={model} /></div>
       </section>
 

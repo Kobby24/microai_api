@@ -47,23 +47,26 @@ function directionLabel(value, explainedClassLabel) {
 function buildSummary(explanation, drivers) {
   if (typeof explanation.summary === 'string' && explanation.summary.trim()) {
     return explanation.summary
+      .replace(/The model predicts /gi, 'This result supports ')
+      .replace(/The strongest SHAP contributions toward this class came from /gi, 'The strongest gene activity patterns supporting this result were ')
+      .replace(/The largest returned SHAP contributions were /gi, 'The most important gene activity patterns were ')
   }
   const towardClass = drivers.filter((feature) => Number(feature.shap_value) > 0).slice(0, 2)
   const strongest = towardClass.length ? towardClass : drivers.slice(0, 2)
   if (!strongest.length) {
-    return `The model predicts ${explanation.explained_class_label}, but no valid SHAP drivers are available to summarize for this sample.`
+    return `This result is ${explanation.explained_class_label}, but no clear gene activity patterns are available to explain it for this sample.`
   }
   const descriptions = strongest.map((feature) => {
     const direction = Number(feature.shap_value) > 0
       ? `${feature.expression_level || expressionLevel(feature.model_input_value)} expression`
       : Number(feature.shap_value) < 0
-        ? `${feature.expression_level || expressionLevel(feature.model_input_value)} expression; SHAP contribution away from ${explanation.explained_class_label}`
-        : 'without a directional contribution'
+        ? `${feature.expression_level || expressionLevel(feature.model_input_value)} expression that moved away from ${explanation.explained_class_label}`
+        : 'without a clear directional contribution'
     return `${driverName(feature)} (${direction})`
   })
   return towardClass.length
-    ? `The model predicts ${explanation.explained_class_label}. The strongest SHAP contributions toward this class came from ${descriptions.join(' and ')}.`
-    : `The model predicts ${explanation.explained_class_label}. The largest returned SHAP contributions were ${descriptions.join(' and ')}.`
+    ? `This result supports ${explanation.explained_class_label}. The strongest gene activity patterns supporting this result were ${descriptions.join(' and ')}.`
+    : `This result supports ${explanation.explained_class_label}. The most important gene activity patterns were ${descriptions.join(' and ')}.`
 }
 
 function TechnicalDetails({ features, explainedClassLabel }) {
@@ -428,10 +431,10 @@ export default function ExplanationPanel({ explanation, model }) {
     <section className="mt-7 border-t border-slate-200 pt-7" aria-labelledby="explanation-heading">
       <div className="max-w-2xl">
         <h3 id="explanation-heading" className="mt-2 font-display text-2xl font-semibold text-slate-950">
-          What influenced this prediction?
+          What influenced this result?
         </h3>
         <p className="mt-2 text-xs text-slate-500">
-          {explanation.model_name.toUpperCase()} sample explanation
+          Important gene activity patterns for this sample
         </p>
         <p className="mt-3 text-base leading-7 text-slate-700">{buildSummary(explanation, drivers)}</p>
       </div>

@@ -46,28 +46,28 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            {interpretation.target}
+            Result
           </p>
           <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-            Predicted {interpretation.classLabel}
+            {interpretation.classLabel}
           </p>
           <p className="mt-2 text-sm text-slate-600">
             Sample ID: <span className="font-medium text-slate-800">{result.sample_id || 'Not provided'}</span>
           </p>
           <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
             {predictedProbabilityText
-              ? `Model prediction: ${interpretation.classLabel}. Probability: ${predictedProbabilityText}.`
-              : `Model predicts ${interpretation.classLabel}. Probability unavailable.`}
+              ? `Result: ${interpretation.classLabel}. How strongly the result is supported: ${predictedProbabilityText}.`
+              : `Result: ${interpretation.classLabel}. How strongly the result is supported: unavailable.`}
             {predictedProbabilityText && hasOtherProbability
-              ? ` Other class (${interpretClass(otherEntry[0], model)}): ${formatPercent(otherEntry[1])}.`
+              ? ` Alternative result (${interpretClass(otherEntry[0], model)}): ${formatPercent(otherEntry[1])}.`
               : predictedProbabilityText && otherEntry
-                ? ' Other class probability unavailable.'
+                ? ' Alternative result support unavailable.'
                 : ''}
           </p>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-sm font-semibold text-slate-800">Class probabilities</p>
+          <p className="mb-3 text-sm font-semibold text-slate-800">How strongly the result is supported</p>
           {entries.length > 0 ? (
             <ul className="space-y-3">
               {entries.map(([label, value]) => (
@@ -186,7 +186,7 @@ function BatchPredictionDetails({
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="rounded-md border border-slate-200 bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {model?.predicts_label || 'Prediction'}
+            Result
           </p>
           <p className="mt-1 font-semibold text-slate-900">
             {interpretClass(row.prediction, model)}
@@ -195,13 +195,13 @@ function BatchPredictionDetails({
             </span>
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Model probability:{' '}
+            Support for this result:{' '}
             <span className="font-mono font-medium text-slate-800">{formatPercent(row.probability)}</span>
           </p>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Class probabilities
+            How strongly the result is supported
           </p>
           {probabilities.length ? (
             <ul className="mt-2 space-y-1.5">

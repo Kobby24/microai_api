@@ -10,6 +10,7 @@ export default function Header({ apiStatus, model, workflowStep }) {
         : 'API unreachable'
 
   const statusColor = apiStatus === 'ok' ? 'bg-blue-600' : 'bg-red-500'
+  const selectedQuestion = model?.predicts_label || model?.display_name || null
 
   return (
     <header className="border-b border-slate-200/90 bg-white/95">
@@ -20,15 +21,15 @@ export default function Header({ apiStatus, model, workflowStep }) {
           </div>
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-              MicroAI
+              Breast Cancer Insights
             </h1>
             <p className="text-xs text-slate-500">
-              Gene expression analysis
+              {selectedQuestion || 'Sample analysis'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          {model && <span className="hidden text-xs text-slate-500 sm:inline">{model.display_name || model.name}</span>}
+          {selectedQuestion && <span className="hidden text-xs font-medium text-slate-600 sm:inline">{selectedQuestion}</span>}
           <span className="flex items-center gap-2 border-l border-slate-200 pl-4 text-xs font-medium text-slate-600">
             {apiStatus === 'loading'
               ? <DnaLoader size="small" label="Checking API connection" />

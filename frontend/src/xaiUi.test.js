@@ -139,7 +139,7 @@ describe('SHAP explanation UI', () => {
   it('shows an explicit explain action after a single-sample prediction', () => {
     const markup = renderResults()
     assert.match(markup, /View explanation/)
-    assert.match(markup, /Class probabilities/)
+    assert.match(markup, /How strongly the result is supported/)
     assert.match(markup, /Sample ID:.*sample-001/)
     assert.doesNotMatch(markup, /Show technical details/)
   })
@@ -160,9 +160,7 @@ describe('SHAP explanation UI', () => {
     }
     const markup = renderResults({ model: gse2034Model, explanation: gse2034Explanation })
 
-    assert.match(markup, /GSE2034/)
     assert.match(markup, /Relapse \(True\)/)
-    assert.doesNotMatch(markup, /GSE7390/)
   })
 
   it('does not show an Explain action without a valid single prediction', () => {
@@ -175,7 +173,7 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Loading explanation/)
     assert.match(markup, /Loading explanation for this sample/)
     assert.match(markup, /dna-loader--small/)
-    assert.match(markup, /Class probabilities/)
+    assert.match(markup, /How strongly the result is supported/)
   })
 
   it('renders a closing waterfall, signed pp contributions, and selected-feature scope', () => {
@@ -207,7 +205,7 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Reference data unavailable/)
     assert.match(markup, /Retrying/)
     assert.match(markup, /dna-loader--small/)
-    assert.match(markup, /Class probabilities/)
+    assert.match(markup, /How strongly the result is supported/)
   })
 
   it('shows honest empty states when explanation probabilities and baseline are missing', () => {
@@ -221,7 +219,7 @@ describe('SHAP explanation UI', () => {
     }
     const markup = renderResults({ explanation: incompleteExplanation })
 
-    assert.match(markup, /Class probabilities/)
+    assert.match(markup, /How strongly the result is supported/)
     assert.match(markup, /No valid SHAP drivers returned/)
     assert.doesNotMatch(markup, /Cumulative SHAP waterfall/)
     assert.doesNotMatch(markup, /Reference-background baseline.*0\.0%/)
@@ -265,8 +263,8 @@ describe('SHAP explanation UI', () => {
 
     assert.match(markup, /Prediction details/)
     assert.match(markup, /Sample 4/)
-    assert.match(markup, /Model probability/)
-    assert.match(markup, /The strongest SHAP contributions toward this class/)
+    assert.match(markup, /Support for this result/)
+    assert.match(markup, /The strongest gene activity patterns supporting this result/)
     assert.match(markup, /Technical details/)
     assert.match(markup, /Back to results/)
   })
@@ -339,7 +337,7 @@ describe('analysis workflow surfaces', () => {
     )
 
     assert.match(header, /Checking API connection/)
-    assert.match(selector, /Loading available models/)
+    assert.match(selector, /Loading questions/)
     assert.match(jsonTab, /Running model/)
     assert.match(csvTab, /Processing batch/)
     for (const markup of [header, selector, jsonTab, csvTab]) {
@@ -401,9 +399,9 @@ describe('analysis workflow surfaces', () => {
         onBack: () => {},
       }),
     )
-    assert.match(markup, /Prediction explanation/)
+    assert.match(markup, /Understand the result/)
     assert.match(markup, /sample-001/)
-    assert.match(markup, /Class probabilities/)
+    assert.match(markup, /How strongly the result is supported/)
     assert.match(markup, /Loading explanation/)
     assert.match(markup, /dna-loader--small/)
 
