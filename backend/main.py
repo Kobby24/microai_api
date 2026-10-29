@@ -165,7 +165,7 @@ EXPLANATION_DRIVER_LIMIT = 8
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://microai-api.vercel.app"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://microai-api.vercel.app","https://disreputable-hex-6vrw4gvgjqqwhr46g-5173.app.github.dev"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
