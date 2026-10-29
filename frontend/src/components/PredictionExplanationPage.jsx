@@ -55,9 +55,17 @@ export default function PredictionExplanationPage({ prediction, model, explanati
     : predictionLabel.includes('No relapse')
       ? 'No relapse predicted'
       : 'Relapse predicted'
+  const confidenceValue = Number.isFinite(Number(prediction.probability)) ? Number(prediction.probability) : null
   const summaryText = predictionLabel.includes('ER')
-    ? `The model classified this sample as ${predictionLabel.toLowerCase()}. This model-generated estimate should be confirmed with appropriate clinical testing.`
-    : `The model classified this sample as ${predictionLabel.toLowerCase()}. This result reflects the model's estimate and is not an independent clinical diagnosis.`
+    ? (predictionLabel.toLowerCase().includes('positive')
+      ? 'The results suggest that this sample may be estrogen receptor-positive (ER-positive), meaning the cancer cells may have estrogen receptors. This estimate should be confirmed through appropriate clinical testing.'
+      : 'The results suggest that this sample may be estrogen receptor-negative (ER-negative), meaning the cancer cells may have few or no estrogen receptors. This estimate should be confirmed through appropriate clinical testing.')
+    : predictionLabel.includes('No relapse')
+      ? 'The system identified the no-relapse category based on the sample\'s gene expression patterns. This does not guarantee that the disease will not return.'
+      : 'The system identified the relapse category based on the sample\'s gene expression patterns. This is a research estimate and does not establish whether or when the disease will return.'
+  const confidenceSummary = confidenceValue != null
+    ? `The system predicted ${predictionLabel} for this sample, with ${formatPercent(prediction.probability)} model confidence.`
+    : `The system predicted ${predictionLabel} for this sample.`
 
   return (
     <div className="space-y-7">
@@ -85,8 +93,8 @@ export default function PredictionExplanationPage({ prediction, model, explanati
       </section>
 
       <section className="surface-panel p-6" aria-labelledby="probability-heading">
-        <h3 id="probability-heading" className="text-lg font-semibold text-slate-950">How strongly does the model support this result?</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">These scores describe the model&apos;s confidence, not a confirmed medical outcome.</p>
+        <h3 id="probability-heading" className="text-lg font-semibold text-slate-950">How strongly does the system support this result?</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">This percentage indicates how strongly the system favors the predicted result based on the sample&apos;s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient&apos;s clinical risk.</p>
         <div className="mt-5"><ProbabilityList prediction={prediction} model={model} /></div>
       </section>
 

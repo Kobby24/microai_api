@@ -138,8 +138,8 @@ function renderResults(overrides = {}) {
 describe('SHAP explanation UI', () => {
   it('shows an explicit explain action after a single-sample prediction', () => {
     const markup = renderResults()
-    assert.match(markup, /View explanation/)
-    assert.match(markup, /Model confidence/)
+    assert.match(markup, /Understand result/)
+    assert.match(markup, /How strongly does the system support this result\?/) 
     assert.match(markup, /Sample ID:.*sample-001/)
     assert.doesNotMatch(markup, /Show technical details/)
   })
@@ -165,7 +165,7 @@ describe('SHAP explanation UI', () => {
 
   it('does not show an Explain action without a valid single prediction', () => {
     const markup = renderResults({ jsonResult: null })
-    assert.doesNotMatch(markup, /View explanation/)
+    assert.doesNotMatch(markup, /Understand result/)
   })
 
   it('shows an accessible loading state without removing the prediction', () => {
@@ -184,7 +184,7 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Technical details/)
     assert.match(markup, /TP53/)
     assert.doesNotMatch(markup, /Cumulative SHAP waterfall/)
-    assert.doesNotMatch(markup, /View explanation/)
+    assert.doesNotMatch(markup, /Understand result/)
   })
 
   it('shows an explanation error while keeping the prediction available', () => {
@@ -215,7 +215,7 @@ describe('SHAP explanation UI', () => {
 
   it('keeps batch results outside the single-sample explanation flow', () => {
     const markup = renderResults({ jsonResult: null, csvResult: { samples_processed: 0, results: [] } })
-    assert.doesNotMatch(markup, /View explanation/)
+    assert.doesNotMatch(markup, /Understand result/)
   })
 
   it('offers an explanation action for every batch result, including later samples', () => {
@@ -230,8 +230,8 @@ describe('SHAP explanation UI', () => {
       csvResult: { samples_processed: results.length, filename: 'patients.csv', results },
     })
 
-    assert.equal((markup.match(/aria-label="View explanation for /g) || []).length, results.length)
-    assert.match(markup, /aria-label="View explanation for Sample 11"/)
+    assert.equal((markup.match(/aria-label="Understand result for /g) || []).length, results.length)
+    assert.match(markup, /aria-label="Understand result for Sample 11"/)
     assert.doesNotMatch(markup, /showing the first 10/)
   })
 
@@ -389,7 +389,7 @@ describe('analysis workflow surfaces', () => {
     )
     assert.match(markup, /Understanding this sample&#x27;s result|Understanding this sample's result/)
     assert.match(markup, /sample-001/)
-    assert.match(markup, /How strongly does the model support this result\?/) 
+    assert.match(markup, /How strongly does the system support this result\?/) 
     assert.match(markup, /Loading explanation/)
     assert.match(markup, /dna-loader--small/)
 

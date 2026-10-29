@@ -92,16 +92,30 @@ function DriverCard({ feature, explainedClassLabel }) {
 }
 
 function SimpleDriverList({ drivers, explainedClassLabel }) {
+  const [showAll, setShowAll] = useState(false)
+  const visibleDrivers = showAll ? drivers : drivers.slice(0, 4)
+
   if (!drivers.length) {
     return <p className="mt-3 text-sm text-slate-500">No reliable gene activity patterns are available to summarize for this sample.</p>
   }
 
   return (
-    <div className="mt-5 grid gap-4 md:grid-cols-2">
-      {drivers.slice(0, 6).map((feature, index) => (
-        <DriverCard key={`${feature.feature_id || 'feature'}-${index}`} feature={feature} explainedClassLabel={explainedClassLabel} />
-      ))}
-    </div>
+    <>
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        {visibleDrivers.map((feature, index) => (
+          <DriverCard key={`${feature.feature_id || 'feature'}-${index}`} feature={feature} explainedClassLabel={explainedClassLabel} />
+        ))}
+      </div>
+      {drivers.length > 4 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((current) => !current)}
+          className="mt-4 inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        >
+          {showAll ? 'Show fewer gene activity patterns' : 'Show more gene activity patterns'}
+        </button>
+      )}
+    </>
   )
 }
 
@@ -216,17 +230,26 @@ export default function ExplanationPanel({ explanation, model }) {
     return { ...feature, ...enriched, ...(driver || {}) }
   })
   const explainedLabel = explanation.explained_class_label
+  const confidenceValue = Number.isFinite(Number(explanation?.class_probabilities?.[explanation?.explained_class]))
+    ? Number(explanation.class_probabilities[explanation.explained_class])
+    : Number.isFinite(Number(explanation?.predicted_output))
+      ? Number(explanation.predicted_output)
+      : null
+  const explanationIntro = confidenceValue != null
+    ? `The system predicted ${explainedLabel} for this sample, with ${formatPercent(confidenceValue * 100)} model confidence.`
+    : `The system predicted ${explainedLabel} for this sample.`
 
   return (
     <section className="mt-7 border-t border-slate-200 pt-7" aria-labelledby="explanation-heading">
       <div className="max-w-2xl">
-        <h3 id="explanation-heading" className="mt-2 font-display text-2xl font-semibold text-slate-950">What influenced this result?</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">The following gene activity patterns had the strongest influence on the model&apos;s result for this sample.</p>
-        <p className="mt-3 text-base leading-7 text-slate-700">{buildSummary(explanation, drivers)}</p>
+        <h3 id="explanation-heading" className="mt-2 font-display text-2xl font-semibold text-slate-950">Understanding this result</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">The following gene activity patterns had the strongest influence on the result for this sample.</p>
+        <p className="mt-3 text-base leading-7 text-slate-700">{explanationIntro} {buildSummary(explanation, drivers)}</p>
       </div>
 
       <div className="mt-7">
-        <h4 className="text-xl font-semibold text-slate-950">Gene activity patterns</h4>
+        <h4 className="text-xl font-semibold text-slate-950">What influenced this result?</h4>
+        <h4 className="mt-2 text-xl font-semibold text-slate-950">Gene activity patterns</h4>
         {drivers.length ? <SimpleDriverList drivers={drivers} explainedClassLabel={explainedLabel} /> : <p className="mt-3 text-sm text-slate-500">No valid gene activity patterns returned.</p>}
       </div>
 
