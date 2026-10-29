@@ -34,7 +34,7 @@ function expressionLevel(value) {
 }
 
 function driverName(feature) {
-  return feature.gene_symbol || feature.feature_id
+  return feature.gene_name || feature.gene_symbol || 'Gene name unavailable'
 }
 
 function directionLabel(value, explainedClassLabel) {
@@ -72,19 +72,23 @@ function DriverCard({ feature, explainedClassLabel }) {
   const observedLevel = feature.expression_level || expressionLevel(feature.model_input_value)
   const geneLabel = driverName(feature)
 
+  const hasVerifiedName = Boolean(feature.gene_name)
+  const symbolDisplay = feature.gene_symbol ? `Gene symbol: ${feature.gene_symbol}` : 'Gene symbol unavailable'
+
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-900">{geneLabel}</p>
-          <p className="mt-1 text-xs text-slate-500">Observed activity: {observedLevel}</p>
+          <p className="text-sm font-semibold text-slate-900">{hasVerifiedName ? feature.gene_name : 'Gene name unavailable'}</p>
+          <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">{symbolDisplay}</p>
+          <p className="mt-2 text-xs text-slate-500">Observed activity: {observedLevel}</p>
         </div>
         <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${value >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
           {value >= 0 ? 'Supports' : 'Against'}
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-slate-700">{supportText} for {explainedClassLabel}.</p>
-      {feature.feature_id && geneLabel !== feature.feature_id && (
+      {feature.feature_id && (
         <p className="mt-2 text-[11px] font-mono text-slate-500">Feature ID: {feature.feature_id}</p>
       )}
     </div>
@@ -131,7 +135,10 @@ function TechnicalDetails({ features, explainedClassLabel }) {
           <div className="min-w-0">
             <p className="truncate font-semibold text-slate-800">{driverName(feature)}</p>
             {feature.gene_symbol && (
-              <p className="truncate font-mono text-slate-500">{feature.feature_id}</p>
+              <p className="truncate font-mono text-slate-500">Gene symbol: {feature.gene_symbol}</p>
+            )}
+            {!feature.gene_symbol && feature.feature_id && (
+              <p className="truncate font-mono text-slate-500">Feature ID: {feature.feature_id}</p>
             )}
           </div>
           <p className="text-slate-600">
@@ -205,8 +212,9 @@ function GlobalDriversSection({ model }) {
           {state.result.drivers.map((driver) => (
             <li key={driver.feature_id} className="grid grid-cols-[minmax(0,1fr)_minmax(5rem,1fr)_3.5rem] items-center gap-3 text-xs">
               <span className="min-w-0">
-                <span className="block truncate font-semibold text-slate-800">{driver.gene_symbol || driver.feature_id}</span>
-                {driver.gene_symbol && <span className="block truncate font-mono text-slate-500">{driver.feature_id}</span>}
+                <span className="block truncate font-semibold text-slate-800">{driver.gene_name || driver.gene_symbol || 'Gene name unavailable'}</span>
+                {driver.gene_symbol && <span className="block truncate font-mono text-slate-500">Gene symbol: {driver.gene_symbol}</span>}
+                {!driver.gene_symbol && <span className="block truncate font-mono text-slate-500">Feature ID: {driver.feature_id}</span>}
               </span>
               <span className="h-2 overflow-hidden rounded bg-slate-100">
                 <span className="block h-full rounded bg-slate-500" style={{ width: `${Math.max(0, Math.min(100, Number(driver.importance) * 100))}%` }} />

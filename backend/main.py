@@ -1,6 +1,7 @@
 import csv
 import joblib
 import logging
+import sqlite3
 import numpy as np
 import os
 from pathlib import Path
@@ -32,6 +33,33 @@ app = FastAPI(title="MICRO-AI Prediction API")
 logger = logging.getLogger(__name__)
 
 
+def _annotation_text(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text in {"---", "NA", "N/A", "null", "NULL"}:
+        return None
+    return text
+
+
+def _symbol_candidates(raw_value):
+    tokens = []
+    for token in (raw_value or "").split("///"):
+        symbol = _annotation_text(token)
+        if symbol is not None:
+            tokens.append(symbol)
+    return tokens
+
+
+def _gene_title_candidates(raw_value):
+    tokens = []
+    for token in (raw_value or "").split("///"):
+        title = _annotation_text(token)
+        if title is not None:
+            tokens.append(title)
+    return tokens
+
+
 def _load_gene_symbols(annotation_path: Path) -> Dict[str, str]:
     symbols: Dict[str, str] = {}
     ambiguous_ids = set()
@@ -42,16 +70,11 @@ def _load_gene_symbols(annotation_path: Path) -> Dict[str, str]:
                 logger.warning("GPL96 annotation file has no ID/Gene Symbol columns.")
                 return {}
             for row in reader:
-                feature_id = (row.get("ID") or "").strip()
-                raw_symbols = (row.get("Gene Symbol") or "").strip()
-                candidates = [symbol.strip() for symbol in raw_symbols.split("///")]
-                if (
-                    not feature_id
-                    or len(candidates) != 1
-                    or not candidates[0]
-                    or candidates[0] in {"---", "NA"}
-                    or feature_id in ambiguous_ids
-                ):
+                feature_id = _annotation_text(row.get("ID"))
+                if not feature_id or feature_id in ambiguous_ids:
+                    continue
+                candidates = _symbol_candidates(row.get("Gene Symbol"))
+                if len(candidates) != 1 or not candidates[0]:
                     continue
                 symbol = candidates[0]
                 existing = symbols.get(feature_id)
@@ -66,7 +89,61 @@ def _load_gene_symbols(annotation_path: Path) -> Dict[str, str]:
     return symbols
 
 
+def _load_gene_metadata(annotation_path: Path) -> Dict[str, Dict[str, object]]:
+    metadata: Dict[str, Dict[str, object]] = {}
+    ambiguous_ids = set()
+    conflicting_ids = set()
+    try:
+        with annotation_path.open(newline="", encoding="utf-8-sig") as stream:
+            reader = csv.DictReader(stream)
+            required = {"ID", "Gene Symbol", "Gene Title"}
+            if not required.issubset(reader.fieldnames or []):
+                logger.warning("GPL96 annotation file has no ID/Gene Symbol/Gene Title columns.")
+                return {}
+            for row in reader:
+                feature_id = _annotation_text(row.get("ID"))
+                if not feature_id or feature_id in conflicting_ids:
+                    continue
+                symbol_candidates = _symbol_candidates(row.get("Gene Symbol"))
+                title_candidates = _gene_title_candidates(row.get("Gene Title"))
+                if not symbol_candidates:
+                    continue
+                if len(symbol_candidates) != 1:
+                    if feature_id not in ambiguous_ids:
+                        metadata[feature_id] = {
+                            "gene_symbol": None,
+                            "gene_name": None,
+                            "gene_name_source": None,
+                            "gene_name_verified": False,
+                        }
+                    ambiguous_ids.add(feature_id)
+                    continue
+                symbol = symbol_candidates[0]
+                existing = metadata.get(feature_id)
+                if existing is not None and existing.get("gene_symbol") not in {None, symbol}:
+                    metadata.pop(feature_id, None)
+                    conflicting_ids.add(feature_id)
+                    continue
+                if title_candidates:
+                    title = title_candidates[0]
+                else:
+                    title = None
+                metadata[feature_id] = {
+                    "gene_symbol": symbol,
+                    "gene_name": title,
+                    "gene_name_source": "GPL96 Affymetrix platform annotation" if title else None,
+                    "gene_name_verified": bool(title),
+                }
+    except OSError:
+        logger.warning("GPL96 annotation file is unavailable; gene names will remain unavailable.")
+        return {}
+    for feature_id in conflicting_ids:
+        metadata.pop(feature_id, None)
+    return metadata
+
+
 GENE_SYMBOLS = _load_gene_symbols(Path(__file__).resolve().parent / "GPL96_annotation.csv")
+GENE_METADATA = _load_gene_metadata(Path(__file__).resolve().parent / "GPL96_annotation.csv")
 
 
 def _positive_limit(name: str, default: int) -> int:
@@ -540,10 +617,16 @@ class ExplanationRequest(PredictionRequest):
 
 class ExplanationFeature(BaseModel):
     feature_id: str
+    gene_symbol: Optional[str] = None
+    gene_name: Optional[str] = None
+    gene_name_source: Optional[str] = None
+    gene_name_verified: bool = False
     raw_input_value: float
     model_input_value: float
     shap_value: float
-    gene_symbol: Optional[str] = None
+    contribution: float
+    contribution_direction: str
+    observed_activity: str
     expression_level: str
     direction: str
     relative_influence_percent: Optional[float] = None
@@ -552,10 +635,16 @@ class ExplanationFeature(BaseModel):
 class ExplanationDriver(BaseModel):
     feature_id: str
     gene_symbol: Optional[str] = None
+    gene_name: Optional[str] = None
+    gene_name_source: Optional[str] = None
+    gene_name_verified: bool = False
     raw_input_value: float
     model_input_value: float
     expression_level: str
+    observed_activity: str
     direction: str
+    contribution: float
+    contribution_direction: str
     shap_value: float
     relative_influence_percent: float
 
@@ -591,6 +680,9 @@ class ExplanationResponse(BaseModel):
 class GlobalDriver(BaseModel):
     feature_id: str
     gene_symbol: Optional[str] = None
+    gene_name: Optional[str] = None
+    gene_name_source: Optional[str] = None
+    gene_name_verified: bool = False
     importance: float
 
 
@@ -627,7 +719,19 @@ def _enrich_explanation_features(features, explained_class_label: str):
             if shap_value < 0
             else "no_directional_contribution"
         )
-        gene_symbol = GENE_SYMBOLS.get(feature["feature_id"])
+        feature_id = feature["feature_id"]
+        metadata = GENE_METADATA.get(feature_id, {})
+        if feature_id in GENE_METADATA:
+            gene_symbol = metadata.get("gene_symbol")
+            gene_name = metadata.get("gene_name")
+            gene_name_source = metadata.get("gene_name_source")
+            gene_name_verified = bool(metadata.get("gene_name_verified"))
+        else:
+            gene_symbol = GENE_SYMBOLS.get(feature_id)
+            gene_name = None
+            gene_name_source = None
+            gene_name_verified = False
+        observed_activity = _expression_level(float(feature["model_input_value"]))
         relative_influence = (
             abs(shap_value) / top_magnitude * 100
             if index < EXPLANATION_DRIVER_LIMIT and top_magnitude > 0
@@ -636,8 +740,14 @@ def _enrich_explanation_features(features, explained_class_label: str):
         item = {
             **feature,
             "gene_symbol": gene_symbol,
-            "expression_level": _expression_level(float(feature["model_input_value"])),
+            "gene_name": gene_name,
+            "gene_name_source": gene_name_source,
+            "gene_name_verified": gene_name_verified,
+            "expression_level": observed_activity,
+            "observed_activity": observed_activity,
             "direction": direction,
+            "contribution": shap_value,
+            "contribution_direction": direction,
             "relative_influence_percent": relative_influence,
         }
         enriched.append(item)
@@ -651,7 +761,7 @@ def _enrich_explanation_features(features, explained_class_label: str):
     if summary_features:
         descriptions = []
         for feature in summary_features:
-            name = feature["gene_symbol"] or feature["feature_id"]
+            name = feature.get("gene_name") or feature.get("gene_symbol") or feature["feature_id"]
             expression = feature["expression_level"]
             if summary_toward_class:
                 effect = f"{expression} expression"
@@ -659,8 +769,6 @@ def _enrich_explanation_features(features, explained_class_label: str):
                 effect = f"{expression} expression; SHAP contribution away from {explained_class_label}"
             elif feature["direction"] == "toward_explained_class":
                 effect = f"toward {explained_class_label}"
-            elif feature["direction"] == "away_from_explained_class":
-                effect = f"away from {explained_class_label}"
             else:
                 effect = "with no directional effect"
             descriptions.append(f"{name} ({effect})")
@@ -691,7 +799,6 @@ def _enrich_explanation_features(features, explained_class_label: str):
 @app.get(
     "/models/{model_name}/global-drivers",
     response_model=GlobalDriversResponse,
-    response_model_exclude_none=True,
 )
 def global_drivers(model_name: str):
     model_name = model_name.lower()
@@ -719,14 +826,30 @@ def global_drivers(model_name: str):
     ):
         raise HTTPException(status_code=503, detail="Global model importance is invalid for this model.")
 
-    drivers = [
-        {
-            "feature_id": feature_ids[int(feature_index)],
-            "gene_symbol": GENE_SYMBOLS.get(feature_ids[int(feature_index)]),
-            "importance": float(score),
-        }
-        for feature_index, score in zip(selected, importance)
-    ]
+    drivers = []
+    for feature_index, score in zip(selected, importance):
+        feature_id = feature_ids[int(feature_index)]
+        metadata = GENE_METADATA.get(feature_id, {})
+        if feature_id in GENE_METADATA:
+            gene_symbol = metadata.get("gene_symbol")
+            gene_name = metadata.get("gene_name")
+            gene_name_source = metadata.get("gene_name_source")
+            gene_name_verified = bool(metadata.get("gene_name_verified"))
+        else:
+            gene_symbol = GENE_SYMBOLS.get(feature_id)
+            gene_name = None
+            gene_name_source = None
+            gene_name_verified = False
+        drivers.append(
+            {
+                "feature_id": feature_id,
+                "gene_symbol": gene_symbol,
+                "gene_name": gene_name,
+                "gene_name_source": gene_name_source,
+                "gene_name_verified": gene_name_verified,
+                "importance": float(score),
+            }
+        )
     drivers.sort(key=lambda driver: driver["importance"], reverse=True)
     return {
         "model_name": model_name,
@@ -765,7 +888,6 @@ def predict_json(model_name: str, request: PredictionRequest):
 @app.post(
     "/explain/{model_name}",
     response_model=ExplanationResponse,
-    response_model_exclude_none=True,
 )
 def explain_json(model_name: str, request: ExplanationRequest):
     model_name = model_name.lower()
