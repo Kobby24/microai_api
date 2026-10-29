@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd /workspaces/microai_api/backend && python - <<'PY'\nimport joblib, numpy as np\nm = joblib\\.load\\('\\./models/GSE7390_model\\.joblib'\\)\nprint\\('type', type\\(m\\)\\)\nprint\\('classes_', getattr\\(m, 'classes_', None\\)\\)\nprint\\('label_encoder classes_', getattr\\(m\\.label_encoder, 'classes_', None\\)\\)\nprint\\('n_selected_features', getattr\\(m, 'n_selected_features', None\\)\\)\nprint\\('selected_genes count', len\\(getattr\\(m, 'selected_genes', \\[\\]\\)\\)\\)\nprint\\('gene_names len', len\\(getattr\\(m, 'gene_names', \\[\\]\\)\\)\\)\nprint\\('training_info keys', list\\(getattr\\(m, 'training_info', \\{\\}\\)\\.keys\\(\\)\\)\\)\nprint\\('quantile ref length', len\\(getattr\\(getattr\\(m,'quantile_normalizer',None\\),'reference_distribution',\\[\\]\\)\\)\\)\nprint\\('scaler mean len', len\\(getattr\\(getattr\\(m,'scaler',None\\),'mean_',\\[\\]\\)\\)\\)\nprint\\('scaler scale len', len\\(getattr\\(getattr\\(m,'scaler',None\\),'scale_',\\[\\]\\)\\)\\)\nprint\\('ensemble weights', getattr\\(m\\.ensemble,'weights',None\\)\\)\nfor c in \\['gbm','rf','svm'\\]:\n    comp = getattr\\(m\\.ensemble, c\\)\n    print\\(c, 'classes', getattr\\(comp,'classes_',None\\)\\)\nPY$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    },
+    "chat.tools.terminal.ignoreDefaultAutoApproveRules": true
+}

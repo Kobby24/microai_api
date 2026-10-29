@@ -22,3 +22,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+*.venv
+/workspaces/microai_api/backend/.venv

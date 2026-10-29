@@ -133,6 +133,37 @@ body {
   color: #0f172a;
 }
 
+.add-patient-button {
+  align-items: center;
+  animation: add-patient-pop 2.4s ease-in-out infinite;
+  background: linear-gradient(135deg, #123b5d 0%, #1d4f78 100%);
+  border: 1px solid #123b5d;
+  border-radius: 9999px;
+  box-shadow: 0 12px 24px rgba(18, 59, 93, 0.18);
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.95rem;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0.85rem 1.5rem;
+  transform-origin: center;
+  transition: box-shadow 180ms ease, filter 180ms ease, transform 180ms ease;
+  will-change: transform;
+}
+
+.add-patient-button:hover {
+  box-shadow: 0 14px 28px rgba(18, 59, 93, 0.2);
+  filter: brightness(1.02);
+  transform: scale(1.02);
+}
+
+.add-patient-button:focus-visible {
+  outline: 3px solid rgba(47, 123, 120, 0.35);
+  outline-offset: 2px;
+}
+
 .primary-button,
 .secondary-button {
   border-radius: 0.375rem;
@@ -255,6 +286,11 @@ body {
   .dna-loader__rung::after {
     top: calc(100% - var(--dna-dot-size));
   }
+
+  .add-patient-button {
+    animation: none;
+    transition: none;
+  }
 }
 
 .indeterminate-bar {
@@ -271,6 +307,16 @@ body {
   left: -35%;
   position: absolute;
   width: 35%;
+}
+
+@keyframes add-patient-pop {
+  0%, 100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 @keyframes dialog-enter {
