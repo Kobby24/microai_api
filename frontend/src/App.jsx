@@ -462,8 +462,8 @@ export default function App() {
                 {[
                   ['01 · Choose what you want to find out', 'Select Disease Relapse or ER Status.'],
                   ['02 · Provide the sample data', 'Upload the gene expression data for one sample or multiple samples.'],
-                  ['03 · View the result', 'See the result for each sample, along with how strongly the result is supported.'],
-                  ['04 · Understand the result', 'See which gene activity patterns were most important in reaching the result.'],
+                  ['03 · Review the result', 'See each sample result in plain language and review the confidence score.'],
+                  ['04 · See what influenced it', 'Review the gene activity patterns that were most important in reaching the result.'],
                 ].map(([heading, text]) => (
                   <div key={heading} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-sm font-semibold text-slate-900">{heading}</p>

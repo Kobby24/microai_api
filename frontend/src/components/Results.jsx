@@ -56,8 +56,8 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
           </p>
           <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
             {predictedProbabilityText
-              ? `Result: ${interpretation.classLabel}. How strongly the result is supported: ${predictedProbabilityText}.`
-              : `Result: ${interpretation.classLabel}. How strongly the result is supported: unavailable.`}
+              ? `Result: ${interpretation.classLabel}. Model confidence: ${predictedProbabilityText}.`
+              : `Result: ${interpretation.classLabel}. Model confidence: unavailable.`}
             {predictedProbabilityText && hasOtherProbability
               ? ` Alternative result (${interpretClass(otherEntry[0], model)}): ${formatPercent(otherEntry[1])}.`
               : predictedProbabilityText && otherEntry
@@ -67,7 +67,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-sm font-semibold text-slate-800">How strongly the result is supported</p>
+          <p className="mb-3 text-sm font-semibold text-slate-800">Model confidence</p>
           {entries.length > 0 ? (
             <ul className="space-y-3">
               {entries.map(([label, value]) => (
@@ -118,7 +118,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
 
         {explaining && (
           <p className="mt-2 text-sm text-slate-600" role="status" aria-live="polite">
-            Loading explanation for this sample.
+            Reviewing the gene activity patterns that influenced this result.
           </p>
         )}
 
@@ -195,13 +195,13 @@ function BatchPredictionDetails({
             </span>
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Support for this result:{' '}
+            Model confidence:{' '}
             <span className="font-mono font-medium text-slate-800">{formatPercent(row.probability)}</span>
           </p>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            How strongly the result is supported
+            Model confidence
           </p>
           {probabilities.length ? (
             <ul className="mt-2 space-y-1.5">
@@ -229,7 +229,7 @@ function BatchPredictionDetails({
       {explaining && (
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-600" role="status" aria-live="polite">
           <DnaLoader size="small" label="Calculating explanation" />
-          Loading explanation for this sample.
+          Reviewing the gene activity patterns that influenced this result.
         </p>
       )}
 
@@ -281,21 +281,21 @@ function CsvResults({
     <div className="space-y-5">
       <div className="border-b border-slate-200 pb-5">
         <div className="flex items-start gap-3">
-        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
-        <div>
-          <p className="text-lg font-semibold text-slate-950">
-            Analysis complete
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Processed {result.samples_processed}{' '}
-            {result.samples_processed === 1 ? 'sample' : 'samples'}
-            {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Source file: <span className="font-medium">{result.filename}</span>
-          </p>
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+          <div>
+            <p className="text-lg font-semibold text-slate-950">
+              Results are ready
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Results are available for {result.samples_processed}{' '}
+              {result.samples_processed === 1 ? 'sample' : 'samples'}
+              {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              File received: <span className="font-medium">{result.filename}</span>
+            </p>
+          </div>
         </div>
-      </div>
         {summaryItems.length > 0 && (
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
             {summaryItems.map(([label, count]) => (
@@ -327,14 +327,13 @@ function CsvResults({
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">
-                  {hasIds ? 'Sample ID' : 'Sample index'}
+                  {hasIds ? 'Sample ID' : 'Sample'}
                 </th>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">
-                  {model?.predicts_label || 'Prediction'}
+                  {model?.predicts_label || 'Result'}
                 </th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Model output</th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Model probability</th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Explanation</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Confidence estimate</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Understand result</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -346,7 +345,6 @@ function CsvResults({
                   <td className="px-4 py-2.5 font-medium text-slate-900">
                     {interpretClass(row.prediction, model)}
                   </td>
-                  <td className="px-4 py-2.5 tabular-nums text-slate-500">{row.prediction}</td>
                   <td className="px-4 py-2.5 tabular-nums text-slate-700">
                     {formatPercent(row.probability)}
                   </td>

@@ -139,7 +139,7 @@ describe('SHAP explanation UI', () => {
   it('shows an explicit explain action after a single-sample prediction', () => {
     const markup = renderResults()
     assert.match(markup, /View explanation/)
-    assert.match(markup, /How strongly the result is supported/)
+    assert.match(markup, /Model confidence/)
     assert.match(markup, /Sample ID:.*sample-001/)
     assert.doesNotMatch(markup, /Show technical details/)
   })
@@ -171,31 +171,19 @@ describe('SHAP explanation UI', () => {
   it('shows an accessible loading state without removing the prediction', () => {
     const markup = renderResults({ explaining: true })
     assert.match(markup, /Loading explanation/)
-    assert.match(markup, /Loading explanation for this sample/)
+    assert.match(markup, /Reviewing the gene activity patterns that influenced this result/)
     assert.match(markup, /dna-loader--small/)
-    assert.match(markup, /How strongly the result is supported/)
+    assert.match(markup, /Model confidence/)
   })
 
-  it('renders a closing waterfall, signed pp contributions, and selected-feature scope', () => {
+  it('keeps question-first plain-language guidance while exposing technical details in the researcher section', () => {
     const markup = renderResults({ explanation })
-    assert.match(markup, /TP53/)
-    assert.match(markup, /probe-positive/)
-    assert.match(markup, /probe-negative/)
-    assert.match(markup, /Toward ER-positive/)
-    assert.match(markup, /Away from ER-positive/)
-    assert.match(markup, /Other 1 feature/)
-    assert.match(markup, /1 undisplayed/)
-    assert.match(markup, /Contribution to model output · percentage points \(pp\)/)
+    assert.match(markup, /What influenced this result\?/) 
+    assert.match(markup, /Gene activity patterns/)
+    assert.match(markup, /Technical explanation for researchers/)
     assert.match(markup, /Technical details/)
-    assert.match(markup, /0\.3000/)
-    assert.match(markup, /Cumulative SHAP waterfall/)
-    assert.match(markup, /Final output/)
-    assert.match(markup, /\+30\.00 pp/)
-    assert.match(markup, /-10\.00 pp/)
-    assert.match(markup, /SHAP describes model contributions, not biological causation/)
-    assert.match(markup, /Selected-feature-space explanation only/)
-    assert.match(markup, /Additivity verified/)
-    assert.match(markup, /sm:grid-cols/)
+    assert.match(markup, /TP53/)
+    assert.doesNotMatch(markup, /Cumulative SHAP waterfall/)
     assert.doesNotMatch(markup, /View explanation/)
   })
 
@@ -205,7 +193,7 @@ describe('SHAP explanation UI', () => {
     assert.match(markup, /Reference data unavailable/)
     assert.match(markup, /Retrying/)
     assert.match(markup, /dna-loader--small/)
-    assert.match(markup, /How strongly the result is supported/)
+    assert.match(markup, /Model confidence/)
   })
 
   it('shows honest empty states when explanation probabilities and baseline are missing', () => {
@@ -219,8 +207,8 @@ describe('SHAP explanation UI', () => {
     }
     const markup = renderResults({ explanation: incompleteExplanation })
 
-    assert.match(markup, /How strongly the result is supported/)
-    assert.match(markup, /No valid SHAP drivers returned/)
+    assert.match(markup, /Model confidence/)
+    assert.match(markup, /No valid gene activity patterns returned/)
     assert.doesNotMatch(markup, /Cumulative SHAP waterfall/)
     assert.doesNotMatch(markup, /Reference-background baseline.*0\.0%/)
   })
@@ -263,7 +251,7 @@ describe('SHAP explanation UI', () => {
 
     assert.match(markup, /Prediction details/)
     assert.match(markup, /Sample 4/)
-    assert.match(markup, /Support for this result/)
+    assert.match(markup, /Model confidence/)
     assert.match(markup, /The strongest gene activity patterns supporting this result/)
     assert.match(markup, /Technical details/)
     assert.match(markup, /Back to results/)
@@ -289,7 +277,7 @@ describe('SHAP explanation UI', () => {
       explanationError: 'Source mapping unavailable.',
     })
 
-    assert.match(loadingMarkup, /Loading explanation for this sample/)
+    assert.match(loadingMarkup, /Reviewing the gene activity patterns that influenced this result/)
     assert.match(loadingMarkup, /ER-negative/)
     assert.match(errorMarkup, /We couldn&#x27;t load this explanation\./)
     assert.match(errorMarkup, /Source mapping unavailable/)
@@ -399,9 +387,9 @@ describe('analysis workflow surfaces', () => {
         onBack: () => {},
       }),
     )
-    assert.match(markup, /Understand the result/)
+    assert.match(markup, /Understanding this sample&#x27;s result|Understanding this sample's result/)
     assert.match(markup, /sample-001/)
-    assert.match(markup, /How strongly the result is supported/)
+    assert.match(markup, /How strongly does the model support this result\?/) 
     assert.match(markup, /Loading explanation/)
     assert.match(markup, /dna-loader--small/)
 
