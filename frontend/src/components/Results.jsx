@@ -24,6 +24,16 @@ function ProbabilityBar({ value }) {
   )
 }
 
+function confidenceGuidance(model) {
+  if (model?.predicts === 'relapse') {
+    return 'This percentage indicates how strongly the system favors the predicted relapse result based on this patient\'s gene activity patterns. It does not establish whether the disease will return or when.'
+  }
+  if (model?.predicts === 'estrogen_receptor_status') {
+    return 'This percentage indicates how strongly the system favors the predicted ER category based on this patient\'s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient\'s clinical risk.'
+  }
+  return 'This percentage indicates how strongly the system favors the predicted result based on this patient\'s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient\'s clinical risk.'
+}
+
 function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, explanation, explanationError }) {
   const interpretation = interpretPrediction(result.prediction, model)
   const entries = Object.entries(result.class_probabilities || {})
@@ -46,28 +56,28 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            {interpretation.target}
+            Result
           </p>
           <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-            Predicted {interpretation.classLabel}
+            {interpretation.classLabel}
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Sample ID: <span className="font-medium text-slate-800">{result.sample_id || 'Not provided'}</span>
+            Patient ID: <span className="font-medium text-slate-800">{result.sample_id || 'Not provided'}</span>
           </p>
           <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
             {predictedProbabilityText
-              ? `Model prediction: ${interpretation.classLabel}. Probability: ${predictedProbabilityText}.`
-              : `Model predicts ${interpretation.classLabel}. Probability unavailable.`}
+              ? `Result: ${interpretation.classLabel}. Model confidence: ${predictedProbabilityText}.`
+              : `Result: ${interpretation.classLabel}. Model confidence: unavailable.`}
             {predictedProbabilityText && hasOtherProbability
-              ? ` Other class (${interpretClass(otherEntry[0], model)}): ${formatPercent(otherEntry[1])}.`
+              ? ` Alternative result (${interpretClass(otherEntry[0], model)}): ${formatPercent(otherEntry[1])}.`
               : predictedProbabilityText && otherEntry
-                ? ' Other class probability unavailable.'
+                ? ' Alternative result support unavailable.'
                 : ''}
           </p>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-sm font-semibold text-slate-800">Class probabilities</p>
+          <p className="mb-3 text-sm font-semibold text-slate-800">How strongly does the system support this result?</p>
           {entries.length > 0 ? (
             <ul className="space-y-3">
               {entries.map(([label, value]) => (
@@ -96,6 +106,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
           ) : (
             <p className="text-sm text-slate-500">Class probabilities are unavailable.</p>
           )}
+          <p className="mt-3 text-xs leading-5 text-slate-600">{confidenceGuidance(model)}</p>
         </div>
       </div>
 
@@ -112,13 +123,13 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
             className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {explaining ? <DnaLoader size="small" label="Loading explanation" /> : <Sparkles className="h-4 w-4" />}
-            {explaining ? 'Loading explanation' : 'View explanation'}
+            {explaining ? 'Loading explanation' : 'Understand result'}
           </button>
         )}
 
         {explaining && (
           <p className="mt-2 text-sm text-slate-600" role="status" aria-live="polite">
-            Loading explanation for this sample.
+            Reviewing the gene activity patterns that influenced this result.
           </p>
         )}
 
@@ -156,7 +167,7 @@ function BatchPredictionDetails({
   explanation,
   explanationError,
 }) {
-  const sampleLabel = row.sample_id || `Sample ${row.sample_index}`
+  const sampleLabel = row.sample_id || `Patient ${row.sample_index}`
   const probabilities = Object.entries(row.class_probabilities || {})
 
   return (
@@ -186,7 +197,7 @@ function BatchPredictionDetails({
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="rounded-md border border-slate-200 bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {model?.predicts_label || 'Prediction'}
+            Result
           </p>
           <p className="mt-1 font-semibold text-slate-900">
             {interpretClass(row.prediction, model)}
@@ -195,13 +206,13 @@ function BatchPredictionDetails({
             </span>
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Model probability:{' '}
+            Model confidence:{' '}
             <span className="font-mono font-medium text-slate-800">{formatPercent(row.probability)}</span>
           </p>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Class probabilities
+            How strongly does the system support this result?
           </p>
           {probabilities.length ? (
             <ul className="mt-2 space-y-1.5">
@@ -229,7 +240,7 @@ function BatchPredictionDetails({
       {explaining && (
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-600" role="status" aria-live="polite">
           <DnaLoader size="small" label="Calculating explanation" />
-          Loading explanation for this sample.
+          Reviewing the gene activity patterns that influenced this result.
         </p>
       )}
 
@@ -271,33 +282,37 @@ function CsvResults({
   const rows = result.results || []
   const hasIds = (result.results || []).some((row) => row.sample_id)
   const counts = summarizeBatch(result.results, model)
-  const countSummary = Object.entries(counts)
-    .map(([label, count]) => `${count} ${label}`)
-    .join(' · ')
+  if (!rows.length) {
+    return (
+      <div className="space-y-5">
+        <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          No patient results are available for this batch.
+        </p>
+      </div>
+    )
+  }
   const summaryItems = Object.entries(counts)
-    .slice(0, 3)
+  const totalPatients = rows.length
 
   return (
     <div className="space-y-5">
       <div className="border-b border-slate-200 pb-5">
         <div className="flex items-start gap-3">
-        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
-        <div>
-          <p className="text-lg font-semibold text-slate-950">
-            Analysis complete
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Processed {result.samples_processed}{' '}
-            {result.samples_processed === 1 ? 'sample' : 'samples'}
-            {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Source file: <span className="font-medium">{result.filename}</span>
-          </p>
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+          <div>
+            <p className="text-lg font-semibold text-slate-950">
+              Results are ready
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Total patients analyzed: <span className="font-semibold text-slate-900">{totalPatients}</span>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              File received: <span className="font-medium">{result.filename}</span>
+            </p>
+          </div>
         </div>
-      </div>
         {summaryItems.length > 0 && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {summaryItems.map(([label, count]) => (
               <div key={label} className="border-l-2 border-[#2f7b78] bg-slate-50 px-4 py-3">
                 <p className="text-2xl font-semibold tabular-nums text-slate-950">{count}</p>
@@ -306,7 +321,9 @@ function CsvResults({
             ))}
           </div>
         )}
-        {countSummary && <p className="mt-4 text-xs text-slate-500">Breakdown: {countSummary}</p>}
+        <p className="mt-4 text-sm leading-6 text-slate-600">
+          View the detailed results below to see which patients received each prediction and understand the gene activity patterns that influenced the results.
+        </p>
       </div>
 
       {selectedRow && (
@@ -327,26 +344,24 @@ function CsvResults({
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">
-                  {hasIds ? 'Sample ID' : 'Sample index'}
+                  {hasIds ? 'Patient ID' : 'Patient'}
                 </th>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">
-                  {model?.predicts_label || 'Prediction'}
+                  {model?.predicts_label || 'Result'}
                 </th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Model output</th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Model probability</th>
-                <th className="px-4 py-2.5 font-semibold text-slate-600">Explanation</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Confidence estimate</th>
+                <th className="px-4 py-2.5 font-semibold text-slate-600">Understand result</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {rows.map((row) => (
                 <tr key={row.sample_index}>
                   <td className="px-4 py-2.5 text-slate-600">
-                    {row.sample_id || `Sample ${row.sample_index}`}
+                    {row.sample_id || `Patient ${row.sample_index}`}
                   </td>
                   <td className="px-4 py-2.5 font-medium text-slate-900">
                     {interpretClass(row.prediction, model)}
                   </td>
-                  <td className="px-4 py-2.5 tabular-nums text-slate-500">{row.prediction}</td>
                   <td className="px-4 py-2.5 tabular-nums text-slate-700">
                     {formatPercent(row.probability)}
                   </td>
@@ -354,11 +369,11 @@ function CsvResults({
                     <button
                       type="button"
                       onClick={() => (onOpenExplanation || onExplain)(row)}
-                      aria-label={`View explanation for ${row.sample_id || `Sample ${row.sample_index}`}`}
+                      aria-label={`Understand result for ${row.sample_id || `Patient ${row.sample_index}`}`}
                       className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-800 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     >
                       <Eye className="h-3.5 w-3.5" />
-                      View explanation
+                      Understand result
                     </button>
                   </td>
                 </tr>

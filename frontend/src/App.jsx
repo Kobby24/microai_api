@@ -287,7 +287,7 @@ export default function App() {
 
     try {
       if (!csvFile) {
-        throw new Error('Source file unavailable. Upload it again to explain this sample.')
+        throw new Error('Source file unavailable. Upload it again to explain this patient.')
       }
       if (!selectedMeta?.ready || !Array.isArray(selectedMeta.feature_ids)) {
         throw new Error('The model has no verified gene/probe schema.')
@@ -335,7 +335,7 @@ export default function App() {
         !isExplanationForPrediction(result, selectedMeta, row)
         || (result.sample_id != null && String(result.sample_id) !== String(payload.sampleId ?? ''))
       ) {
-        throw new Error('Explanation did not match this batch sample.')
+        throw new Error('Explanation did not match this batch patient.')
       }
       if (requestId !== explanationRequestId.current) return
       source.explanations.set(row.sample_index, result)
@@ -411,10 +411,16 @@ export default function App() {
   }
 
   const selectedMeta = models.find((model) => model.name === selectedModel) || null
+  const questionPrompt =
+    selectedMeta?.predicts === 'relapse'
+      ? 'Is the breast cancer associated with relapse?'
+      : selectedMeta?.predicts === 'estrogen_receptor_status'
+        ? 'Is the breast cancer ER positive or ER negative?'
+        : 'Choose a question to continue.'
 
   const tabs = [
-    { id: 'json', label: 'Single Sample (JSON)', icon: Braces },
-    { id: 'csv', label: 'Batch Predict (CSV / TSV)', icon: FileSpreadsheet },
+    { id: 'json', label: 'One patient', icon: Braces },
+    { id: 'csv', label: 'Multiple patients', icon: FileSpreadsheet },
   ]
 
   return (
@@ -423,46 +429,71 @@ export default function App() {
 
       <main className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:py-10">
         {workflowStep === 'start' && (
-          <section className="grid items-end gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16">
-            <div className="max-w-2xl">
-              <p className="eyebrow">Research analysis workspace</p>
-              <h2 className="mt-4 max-w-xl font-display text-4xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-5xl">
-                Gene expression analysis
+          <div className="space-y-10">
+            <section className="max-w-3xl">
+              <h2 className="font-display text-4xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-5xl">
+                Breast Cancer Insights
               </h2>
-              <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-                Run supported models, review probabilities, and inspect sample-specific features.
+              <p className="mt-5 text-lg leading-8 text-slate-600">
+                Explore important information about a breast cancer patient using their gene expression data.
               </p>
-              <button
-                type="button"
-                onClick={handleStart}
-                className="mt-8 inline-flex items-center rounded-md bg-[#123b5d] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0d2f4b] focus:outline-none focus:ring-2 focus:ring-[#123b5d]/30"
-              >
-                Start analysis
-              </button>
-            </div>
-            <div className="border-l border-slate-300 pl-6 lg:mb-2">
-              <p className="text-sm font-semibold text-slate-900">Analysis workflow</p>
-              <ol className="mt-5 space-y-5">
-                {['Choose a supported model', 'Provide a sample or batch file', 'Review predictions and feature contributions'].map((item, index) => (
-                  <li key={item} className="flex gap-4">
-                    <span className="font-mono text-xs font-semibold text-[#2f7b78]">0{index + 1}</span>
-                    <span className="text-sm leading-6 text-slate-600">{item}</span>
-                  </li>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+                Choose what you would like to find out, provide patient data, and view the results in a clear and easy-to-understand format.
+              </p>
+            </section>
+
+            <section className="space-y-6">
+              <div>
+                <p className="eyebrow">Question selection</p>
+                <h3 className="mt-2 text-2xl font-semibold text-slate-950">What would you like to find out?</h3>
+              </div>
+              <ModelSelector
+                models={models}
+                selectedModel={selectedModel}
+                onChange={handleModelChange}
+                loading={modelsLoading}
+                disabled={models.length === 0}
+              />
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="font-display text-2xl font-semibold text-slate-950">How it works</h3>
+              <div className="mt-6 grid gap-5 md:grid-cols-2">
+                {[
+                  ['01 · Choose what you want to find out', 'Select Disease Relapse or ER Status.'],
+                  ['02 · Provide patient data', 'Upload the gene expression data for one patient or multiple patients.'],
+                  ['03 · Review the result', 'See each patient result in plain language and review the confidence score.'],
+                  ['04 · See what influenced it', 'Review the gene activity patterns that were most important in reaching the result.'],
+                ].map(([heading, text]) => (
+                  <div key={heading} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-semibold text-slate-900">{heading}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+                  </div>
                 ))}
-              </ol>
-            </div>
-          </section>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+              <h3 className="text-xl font-semibold text-slate-950">For research and clinical support</h3>
+              <p className="mt-3 text-sm leading-7 text-slate-600">
+                This tool helps make gene expression information easier to explore and understand.
+              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                The results are intended to support research and clinical review. They should not be used on their own to diagnose a patient or make treatment decisions.
+              </p>
+            </section>
+          </div>
         )}
 
         {workflowStep !== 'start' && workflowStep !== 'results' && workflowStep !== 'analyzing' && !explanationView && (
           <div className="space-y-8">
             <div>
-              <p className="eyebrow">New analysis</p>
-              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Prepare your analysis</h2>
-              <p className="mt-2 text-sm text-slate-600">Choose a model and input format for your research question.</p>
+              <p className="eyebrow">02 / Provide patient data</p>
+              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Add patient data</h2>
+              <p className="mt-2 text-sm text-slate-600">Provide the gene expression data for the breast cancer patient you want to examine.</p>
             </div>
             <div className="workflow-track" aria-label="Analysis workflow">
-              {['Model', 'Data', 'Results'].map((label, index) => {
+              {['Question', 'Patient data', 'Results'].map((label, index) => {
                 const step = ['model', 'input', 'results'][index]
                 const active = step === workflowStep || (workflowStep === 'input' && step === 'model')
                 return <span key={label} className={active ? 'workflow-step workflow-step-active' : 'workflow-step'}><b>0{index + 1}</b>{label}</span>
@@ -481,12 +512,17 @@ export default function App() {
 
             {workflowStep === 'input' && selectedMeta && (
               <section className="surface-panel p-6">
-                <div className="mb-6 flex items-end justify-between gap-4 border-b border-slate-200 pb-5">
-                  <div>
-                    <p className="eyebrow">02 / Provide data</p>
-                    <h3 className="mt-2 text-xl font-semibold text-slate-950">Choose an input format</h3>
+                <div className="mb-6 border-b border-slate-200 pb-5">
+                  <p className="eyebrow">02 / Provide patient data</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add patient data</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                    Provide the gene expression data for the breast cancer patient you want to examine.
+                  </p>
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Question we're exploring</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{selectedMeta.predicts_label || 'Selected question'}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">{questionPrompt}</p>
                   </div>
-                  <p className="hidden text-right text-xs text-slate-500 sm:block">Model: {selectedMeta.display_name || selectedMeta.name}</p>
                 </div>
                 <div className="flex border-b border-slate-200">
                   {tabs.map(({ id, label, icon: Icon }) => (

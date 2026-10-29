@@ -13,8 +13,8 @@ export default function AnalysisLoadingOverlay({ mode }) {
     <div className="dialog-backdrop" aria-live="polite">
       <section className="loading-panel" aria-labelledby="analysis-loading-title">
         <div className="analysis-loading-loader"><DnaLoader size="large" label="Running analysis" /></div>
-        <h2 id="analysis-loading-title" className="text-2xl font-semibold text-slate-950">Running analysis</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Validating input and running the selected model.</p>
+        <h2 id="analysis-loading-title" className="text-2xl font-semibold text-slate-950">Analyzing patient data</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">We’re reviewing the patient’s gene expression data and analyzing it with the selected model. This may take a few moments while we prepare the results and explanations.</p>
         <div className="indeterminate-bar mt-6" aria-hidden="true"><span /></div>
         <ul className="mt-6 space-y-3 text-left">
           {steps.map((step) => (

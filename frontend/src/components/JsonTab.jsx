@@ -18,7 +18,7 @@ export default function JsonTab({
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
         <label htmlFor="sample-id" className="mb-2 block text-sm font-medium text-slate-800">
-          Sample ID <span className="font-normal text-slate-500">(optional)</span>
+          Patient ID <span className="font-normal text-slate-500">(optional)</span>
         </label>
         <input
           id="sample-id"
@@ -26,7 +26,7 @@ export default function JsonTab({
           value={sampleId}
           maxLength={128}
           onChange={(event) => onSampleIdChange(event.target.value)}
-          placeholder="Enter a sample identifier"
+          placeholder="Enter a patient identifier"
           className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100"
         />
       </div>
@@ -45,13 +45,20 @@ export default function JsonTab({
         />
       </div>
 
-      <div className="flex items-start gap-2.5 rounded-lg border border-blue-100 bg-blue-50 px-3.5 py-3 text-sm text-blue-900">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
-        <p>
-          <span className="font-semibold">Enter a JSON array of feature ID/value pairs.</span>{' '}
-          Include every required ID shown in model details
-          {geneCount ? ` (${geneCount} for ${model.display_name || model.name})` : ''}. IDs must be unique. Values must be finite numbers.
+      <div className="rounded-lg border border-blue-100 bg-blue-50 px-3.5 py-3 text-sm text-blue-900">
+        <p className="font-semibold text-blue-900">Before you upload</p>
+        <p className="mt-2 text-sm leading-6 text-blue-800">
+          Your patient data should include the gene expression measurements required for this question.
         </p>
+        <details className="mt-3">
+          <summary className="cursor-pointer list-none font-medium text-blue-900">View file requirements</summary>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-blue-800">
+            <li>Required gene IDs</li>
+            <li>Number of measurements: {geneCount || 'depends on the selected question'}</li>
+            <li>Patient ID requirements</li>
+            <li>Missing or invalid values</li>
+          </ul>
+        </details>
       </div>
 
       <div className="flex justify-end">
@@ -60,8 +67,8 @@ export default function JsonTab({
           disabled={disabled || loading}
           className="inline-flex min-w-40 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading && <DnaLoader size="small" label="Running model" />}
-          {loading ? 'Running model' : 'Review analysis'}
+          {loading && <DnaLoader size="small" label="Reviewing patient data" />}
+          {loading ? 'Reviewing patient data' : 'Analyze patient data'}
         </button>
       </div>
     </form>
