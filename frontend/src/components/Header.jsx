@@ -24,7 +24,7 @@ export default function Header({ apiStatus, model, workflowStep }) {
               Breast Cancer Insights
             </h1>
             <p className="text-xs text-slate-500">
-              {selectedQuestion || 'Sample analysis'}
+              {selectedQuestion || 'Patient analysis'}
             </p>
           </div>
         </div>

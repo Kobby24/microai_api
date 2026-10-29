@@ -26,12 +26,12 @@ function ProbabilityBar({ value }) {
 
 function confidenceGuidance(model) {
   if (model?.predicts === 'relapse') {
-    return 'This percentage indicates how strongly the system favors the predicted relapse result based on the sample\'s gene activity patterns. It does not establish whether the disease will return or when.'
+    return 'This percentage indicates how strongly the system favors the predicted relapse result based on this patient\'s gene activity patterns. It does not establish whether the disease will return or when.'
   }
   if (model?.predicts === 'estrogen_receptor_status') {
-    return 'This percentage indicates how strongly the system favors the predicted ER category based on the sample\'s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient\'s clinical risk.'
+    return 'This percentage indicates how strongly the system favors the predicted ER category based on this patient\'s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient\'s clinical risk.'
   }
-  return 'This percentage indicates how strongly the system favors the predicted result based on the sample\'s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient\'s clinical risk.'
+  return 'This percentage indicates how strongly the system favors the predicted result based on this patient\'s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient\'s clinical risk.'
 }
 
 function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, explanation, explanationError }) {
@@ -62,7 +62,7 @@ function JsonResults({ result, model, onExplain, onOpenExplanation, explaining, 
             {interpretation.classLabel}
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Sample ID: <span className="font-medium text-slate-800">{result.sample_id || 'Not provided'}</span>
+            Patient ID: <span className="font-medium text-slate-800">{result.sample_id || 'Not provided'}</span>
           </p>
           <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
             {predictedProbabilityText
@@ -167,7 +167,7 @@ function BatchPredictionDetails({
   explanation,
   explanationError,
 }) {
-  const sampleLabel = row.sample_id || `Sample ${row.sample_index}`
+  const sampleLabel = row.sample_id || `Patient ${row.sample_index}`
   const probabilities = Object.entries(row.class_probabilities || {})
 
   return (
@@ -286,7 +286,7 @@ function CsvResults({
     return (
       <div className="space-y-5">
         <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          No sample results are available for this batch.
+          No patient results are available for this batch.
         </p>
       </div>
     )
@@ -308,7 +308,7 @@ function CsvResults({
             </p>
             <p className="mt-1 text-sm text-slate-600">
               Results are available for {result.samples_processed}{' '}
-              {result.samples_processed === 1 ? 'sample' : 'samples'}
+              {result.samples_processed === 1 ? 'patient' : 'patients'}
               {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}.
             </p>
             <p className="mt-1 text-xs text-slate-500">
@@ -347,7 +347,7 @@ function CsvResults({
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">
-                  {hasIds ? 'Sample ID' : 'Sample'}
+                  {hasIds ? 'Patient ID' : 'Patient'}
                 </th>
                 <th className="px-4 py-2.5 font-semibold text-slate-600">
                   {model?.predicts_label || 'Result'}
@@ -360,7 +360,7 @@ function CsvResults({
               {rows.map((row) => (
                 <tr key={row.sample_index}>
                   <td className="px-4 py-2.5 text-slate-600">
-                    {row.sample_id || `Sample ${row.sample_index}`}
+                    {row.sample_id || `Patient ${row.sample_index}`}
                   </td>
                   <td className="px-4 py-2.5 font-medium text-slate-900">
                     {interpretClass(row.prediction, model)}
@@ -372,7 +372,7 @@ function CsvResults({
                     <button
                       type="button"
                       onClick={() => (onOpenExplanation || onExplain)(row)}
-                      aria-label={`Understand result for ${row.sample_id || `Sample ${row.sample_index}`}`}
+                      aria-label={`Understand result for ${row.sample_id || `Patient ${row.sample_index}`}`}
                       className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-800 transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     >
                       <Eye className="h-3.5 w-3.5" />

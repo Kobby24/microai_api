@@ -9,7 +9,7 @@ function questionInfo(model) {
     return {
       heading: 'Disease Relapse',
       question: 'Is the breast cancer associated with relapse?',
-      description: 'Find out whether the sample is associated with disease relapse or no disease relapse.',
+      description: 'Find out whether this patient’s breast cancer is associated with disease relapse or no disease relapse.',
       action: 'Explore Disease Relapse',
     }
   }
@@ -17,7 +17,7 @@ function questionInfo(model) {
   return {
     heading: 'ER Status',
     question: 'Is the breast cancer ER positive or ER negative?',
-    description: 'Find out whether the sample is associated with ER-positive or ER-negative breast cancer.',
+    description: 'Find out whether this patient’s breast cancer is associated with ER-positive or ER-negative status.',
     action: 'Explore ER Status',
   }
 }

@@ -64,7 +64,7 @@ export default function CsvTab({
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-blue-700 shadow-sm ring-1 ring-slate-200">
           <Upload className="h-5 w-5" />
         </div>
-        <p className="text-lg font-semibold text-slate-900">Upload your sample data</p>
+        <p className="text-lg font-semibold text-slate-900">Upload patient data</p>
         <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
           Drag and drop your file here, or choose a file from your computer.
         </p>
@@ -110,7 +110,7 @@ export default function CsvTab({
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
         <p className="font-semibold text-slate-800">Before you upload</p>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          Your file should contain the gene expression measurements for your sample.
+          Your file should contain the gene expression measurements for this patient.
         </p>
         <details className="mt-3">
           <summary className="cursor-pointer list-none font-medium text-slate-800">View file requirements</summary>
@@ -118,7 +118,7 @@ export default function CsvTab({
             <li>Required gene IDs</li>
             <li>Number of measurements: {formatGeneCount(model?.expected_genes) || 'depends on the selected question'}</li>
             <li>Accepted file structure for CSV or TSV uploads</li>
-            <li>Sample ID requirements</li>
+            <li>Patient ID requirements</li>
             <li>Missing or invalid values</li>
           </ul>
         </details>
@@ -130,8 +130,8 @@ export default function CsvTab({
           disabled={disabled || loading}
           className="inline-flex min-w-52 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading && <DnaLoader size="small" label="Reviewing sample" />}
-          {loading ? 'Reviewing sample' : 'Review sample'}
+          {loading && <DnaLoader size="small" label="Reviewing patient data" />}
+          {loading ? 'Reviewing patient data' : 'Analyze patient data'}
         </button>
       </div>
     </form>

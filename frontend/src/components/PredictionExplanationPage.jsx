@@ -37,18 +37,18 @@ export default function PredictionExplanationPage({ prediction, model, explanati
     return (
       <section className="surface-panel p-8 text-center">
         <h2 className="text-xl font-semibold text-slate-950">No prediction available</h2>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">Select a sample from the results page.</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">Select a patient from the results page.</p>
         <button type="button" onClick={onBack} className="primary-button mt-6">Back to analysis</button>
       </section>
     )
   }
 
-  const sampleLabel = prediction.sample_id || `Sample ${prediction.sample_index ?? ''}`.trim()
+  const sampleLabel = prediction.sample_id || `Patient ${prediction.sample_index ?? ''}`.trim()
   const predictionLabel = interpretClass(prediction.prediction, model)
   const questionText = model?.predicts === 'relapse'
-    ? 'Is this breast cancer sample associated with relapse?'
+    ? 'Is this patient’s breast cancer associated with relapse?'
     : model?.predicts === 'estrogen_receptor_status'
-      ? 'Is this breast cancer sample ER positive or ER negative?'
+      ? 'Is this patient’s breast cancer ER positive or ER negative?'
       : 'What question is this result answering?'
   const resultHeading = predictionLabel.includes('ER')
     ? `${predictionLabel} predicted`
@@ -58,20 +58,20 @@ export default function PredictionExplanationPage({ prediction, model, explanati
   const confidenceValue = Number.isFinite(Number(prediction.probability)) ? Number(prediction.probability) : null
   const summaryText = predictionLabel.includes('ER')
     ? (predictionLabel.toLowerCase().includes('positive')
-      ? 'The results suggest that this sample may be estrogen receptor-positive (ER-positive), meaning the cancer cells may have estrogen receptors. This estimate should be confirmed through appropriate clinical testing.'
-      : 'The results suggest that this sample may be estrogen receptor-negative (ER-negative), meaning the cancer cells may have few or no estrogen receptors. This estimate should be confirmed through appropriate clinical testing.')
+      ? 'The results suggest that this patient’s breast cancer may be estrogen receptor-positive (ER-positive). This means the cancer cells may have estrogen receptors. This is a model-generated estimate based on gene expression data and must be confirmed through appropriate clinical testing.'
+      : 'The results suggest that this patient’s breast cancer may be estrogen receptor-negative (ER-negative). This means the cancer cells may have few or no estrogen receptors. This is a model-generated estimate based on gene expression data and must be confirmed through appropriate clinical testing.')
     : predictionLabel.includes('No relapse')
-      ? 'The system identified the no-relapse category based on the sample\'s gene expression patterns. This does not guarantee that the disease will not return.'
-      : 'The system identified the relapse category based on the sample\'s gene expression patterns. This is a research estimate and does not establish whether or when the disease will return.'
+      ? 'The results suggest that this patient’s gene expression patterns are associated with no predicted relapse. This estimate is based on model analysis and does not confirm a future clinical outcome.'
+      : 'The results suggest that this patient’s gene expression patterns are associated with a higher likelihood of disease relapse. This estimate is based on model analysis and does not confirm a future clinical outcome.'
   const confidenceSummary = confidenceValue != null
-    ? `The system predicted ${predictionLabel} for this sample, with ${formatPercent(prediction.probability)} model confidence.`
-    : `The system predicted ${predictionLabel} for this sample.`
+    ? `The system predicted ${predictionLabel} for this patient, with ${formatPercent(prediction.probability)} model confidence.`
+    : `The system predicted ${predictionLabel} for this patient.`
 
   return (
     <div className="space-y-7">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-semibold text-[#1f5f5c] hover:underline"><ArrowLeft className="h-4 w-4" />Back to analysis results</button>
       <div>
-        <p className="eyebrow">Understanding this sample&apos;s result</p>
+        <p className="eyebrow">Understanding this patient&apos;s result</p>
         <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">{sampleLabel}</h2>
         <p className="mt-3 text-sm text-slate-700"><span className="font-semibold text-slate-900">Question:</span> {questionText}</p>
       </div>
@@ -82,7 +82,7 @@ export default function PredictionExplanationPage({ prediction, model, explanati
         <p className="mt-3 text-sm leading-6 text-slate-700">{summaryText}</p>
         <dl className="mt-6 grid gap-5 border-t border-slate-200 pt-5 sm:grid-cols-2">
           <div>
-            <dt className="meta-label">Sample</dt>
+            <dt className="meta-label">Patient</dt>
             <dd className="mt-1 text-sm font-medium text-slate-800">{sampleLabel}</dd>
           </div>
           <div>
@@ -94,7 +94,7 @@ export default function PredictionExplanationPage({ prediction, model, explanati
 
       <section className="surface-panel p-6" aria-labelledby="probability-heading">
         <h3 id="probability-heading" className="text-lg font-semibold text-slate-950">How strongly does the system support this result?</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">This percentage indicates how strongly the system favors the predicted result based on the sample&apos;s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient&apos;s clinical risk.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">This percentage indicates how strongly the system favors the predicted result based on this patient&apos;s gene activity patterns. It is not a guarantee that the result is correct or a measure of a patient&apos;s clinical risk.</p>
         <div className="mt-5"><ProbabilityList prediction={prediction} model={model} /></div>
       </section>
 

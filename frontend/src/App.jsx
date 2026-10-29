@@ -287,7 +287,7 @@ export default function App() {
 
     try {
       if (!csvFile) {
-        throw new Error('Source file unavailable. Upload it again to explain this sample.')
+        throw new Error('Source file unavailable. Upload it again to explain this patient.')
       }
       if (!selectedMeta?.ready || !Array.isArray(selectedMeta.feature_ids)) {
         throw new Error('The model has no verified gene/probe schema.')
@@ -335,7 +335,7 @@ export default function App() {
         !isExplanationForPrediction(result, selectedMeta, row)
         || (result.sample_id != null && String(result.sample_id) !== String(payload.sampleId ?? ''))
       ) {
-        throw new Error('Explanation did not match this batch sample.')
+        throw new Error('Explanation did not match this batch patient.')
       }
       if (requestId !== explanationRequestId.current) return
       source.explanations.set(row.sample_index, result)
@@ -419,8 +419,8 @@ export default function App() {
         : 'Choose a question to continue.'
 
   const tabs = [
-    { id: 'json', label: 'One sample', icon: Braces },
-    { id: 'csv', label: 'Multiple samples', icon: FileSpreadsheet },
+    { id: 'json', label: 'One patient', icon: Braces },
+    { id: 'csv', label: 'Multiple patients', icon: FileSpreadsheet },
   ]
 
   return (
@@ -435,10 +435,10 @@ export default function App() {
                 Breast Cancer Insights
               </h2>
               <p className="mt-5 text-lg leading-8 text-slate-600">
-                Explore important information about a breast cancer sample using its gene expression data.
+                Explore important information about a breast cancer patient using their gene expression data.
               </p>
               <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-                Choose what you would like to find out, provide the sample data, and view the results in a clear and easy-to-understand format.
+                Choose what you would like to find out, provide patient data, and view the results in a clear and easy-to-understand format.
               </p>
             </section>
 
@@ -461,8 +461,8 @@ export default function App() {
               <div className="mt-6 grid gap-5 md:grid-cols-2">
                 {[
                   ['01 · Choose what you want to find out', 'Select Disease Relapse or ER Status.'],
-                  ['02 · Provide the sample data', 'Upload the gene expression data for one sample or multiple samples.'],
-                  ['03 · Review the result', 'See each sample result in plain language and review the confidence score.'],
+                  ['02 · Provide patient data', 'Upload the gene expression data for one patient or multiple patients.'],
+                  ['03 · Review the result', 'See each patient result in plain language and review the confidence score.'],
                   ['04 · See what influenced it', 'Review the gene activity patterns that were most important in reaching the result.'],
                 ].map(([heading, text]) => (
                   <div key={heading} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -488,12 +488,12 @@ export default function App() {
         {workflowStep !== 'start' && workflowStep !== 'results' && workflowStep !== 'analyzing' && !explanationView && (
           <div className="space-y-8">
             <div>
-              <p className="eyebrow">02 / Provide sample data</p>
-              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Add your sample data</h2>
-              <p className="mt-2 text-sm text-slate-600">Provide the gene expression data for the breast cancer sample you want to examine.</p>
+              <p className="eyebrow">02 / Provide patient data</p>
+              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Add patient data</h2>
+              <p className="mt-2 text-sm text-slate-600">Provide the gene expression data for the breast cancer patient you want to examine.</p>
             </div>
             <div className="workflow-track" aria-label="Analysis workflow">
-              {['Question', 'Sample data', 'Results'].map((label, index) => {
+              {['Question', 'Patient data', 'Results'].map((label, index) => {
                 const step = ['model', 'input', 'results'][index]
                 const active = step === workflowStep || (workflowStep === 'input' && step === 'model')
                 return <span key={label} className={active ? 'workflow-step workflow-step-active' : 'workflow-step'}><b>0{index + 1}</b>{label}</span>
@@ -513,10 +513,10 @@ export default function App() {
             {workflowStep === 'input' && selectedMeta && (
               <section className="surface-panel p-6">
                 <div className="mb-6 border-b border-slate-200 pb-5">
-                  <p className="eyebrow">02 / Provide sample data</p>
-                  <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add your sample data</h3>
+                  <p className="eyebrow">02 / Provide patient data</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add patient data</h3>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                    Provide the gene expression data for the breast cancer sample you want to examine.
+                    Provide the gene expression data for the breast cancer patient you want to examine.
                   </p>
                   <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Question we're exploring</p>

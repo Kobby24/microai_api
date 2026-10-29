@@ -100,7 +100,7 @@ function SimpleDriverList({ drivers, explainedClassLabel }) {
   const visibleDrivers = showAll ? drivers : drivers.slice(0, 4)
 
   if (!drivers.length) {
-    return <p className="mt-3 text-sm text-slate-500">No reliable gene activity patterns are available to summarize for this sample.</p>
+    return <p className="mt-3 text-sm text-slate-500">No reliable gene activity patterns are available to summarize for this patient.</p>
   }
 
   return (
@@ -193,7 +193,7 @@ function GlobalDriversSection({ model }) {
         Technical details for researchers
       </summary>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
-        Global importance describes the model overall, not this sample.
+        Global importance describes the model overall, not this patient.
       </p>
       {state.status === 'loading' && (
         <p className="mt-3 flex items-center gap-2 text-sm text-slate-500">
@@ -244,14 +244,14 @@ export default function ExplanationPanel({ explanation, model }) {
       ? Number(explanation.predicted_output)
       : null
   const explanationIntro = confidenceValue != null
-    ? `The system predicted ${explainedLabel} for this sample, with ${formatPercent(confidenceValue * 100)} model confidence.`
-    : `The system predicted ${explainedLabel} for this sample.`
+    ? `The system predicted ${explainedLabel} for this patient, with ${formatPercent(confidenceValue * 100)} model confidence.`
+    : `The system predicted ${explainedLabel} for this patient.`
 
   return (
     <section className="mt-7 border-t border-slate-200 pt-7" aria-labelledby="explanation-heading">
       <div className="max-w-2xl">
         <h3 id="explanation-heading" className="mt-2 font-display text-2xl font-semibold text-slate-950">Understanding this result</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">The following gene activity patterns had the strongest influence on the result for this sample.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">The following gene activity patterns had the strongest influence on the result for this patient.</p>
         <p className="mt-3 text-base leading-7 text-slate-700">{explanationIntro} {buildSummary(explanation, drivers)}</p>
       </div>
 

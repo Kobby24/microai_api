@@ -20,7 +20,7 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
     : model?.predicts === 'estrogen_receptor_status'
       ? 'Is the breast cancer ER positive or ER negative?'
       : 'Question to review.'
-  const sampleLabel = isBatch ? file?.name || 'Selected sample data file' : sampleId?.trim() || 'Single sample'
+  const sampleLabel = isBatch ? file?.name || 'Selected patient data file' : sampleId?.trim() || 'Single patient'
   const format = isBatch ? file?.name?.toLowerCase().endsWith('.tsv') ? 'TSV' : 'CSV' : 'JSON expression map'
 
   return (
@@ -30,8 +30,8 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
       <section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title">
         <div className="flex items-start justify-between gap-5 border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 id="review-dialog-title" className="text-2xl font-semibold text-slate-950">Review your sample</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Before continuing, check that your question and sample data are correct.</p>
+            <h2 id="review-dialog-title" className="text-2xl font-semibold text-slate-950">Review patient data</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Before continuing, check that your question and patient data are correct.</p>
           </div>
           <button ref={closeButtonRef} type="button" onClick={onCancel} className="icon-button" aria-label="Close review dialog">
             <X className="h-5 w-5" />
@@ -46,14 +46,14 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
           </div>
 
           <div>
-            <p className="meta-label">Sample data</p>
+            <p className="meta-label">Patient data</p>
             <p className="mt-1 text-sm font-semibold text-slate-900">{sampleLabel}</p>
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <dt className="meta-label">Samples</dt>
-              <dd className="mt-1 text-sm font-semibold text-slate-900">{isBatch ? 'Multiple samples' : 'Single sample'}</dd>
+              <dt className="meta-label">Patients</dt>
+              <dd className="mt-1 text-sm font-semibold text-slate-900">{isBatch ? 'Multiple patients' : 'Single patient'}</dd>
             </div>
             <div>
               <dt className="meta-label">File type</dt>
@@ -63,7 +63,7 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-semibold text-slate-900">Ready to continue?</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Your sample data will be reviewed to provide a result for the question above.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Your patient data will be reviewed to provide a result for the question above.</p>
           </div>
         </div>
 

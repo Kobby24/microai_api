@@ -140,7 +140,7 @@ describe('SHAP explanation UI', () => {
     const markup = renderResults()
     assert.match(markup, /Understand result/)
     assert.match(markup, /How strongly does the system support this result\?/) 
-    assert.match(markup, /Sample ID:.*sample-001/)
+    assert.match(markup, /Patient ID:.*sample-001/)
     assert.doesNotMatch(markup, /Show technical details/)
   })
 
@@ -231,7 +231,7 @@ describe('SHAP explanation UI', () => {
     })
 
     assert.equal((markup.match(/aria-label="Understand result for /g) || []).length, results.length)
-    assert.match(markup, /aria-label="Understand result for Sample 11"/)
+    assert.match(markup, /aria-label="Understand result for Patient 11"/)
     assert.doesNotMatch(markup, /showing the first 10/)
   })
 
@@ -250,7 +250,7 @@ describe('SHAP explanation UI', () => {
     })
 
     assert.match(markup, /Prediction details/)
-    assert.match(markup, /Sample 4/)
+    assert.match(markup, /Patient 4/)
     assert.match(markup, /Model confidence/)
     assert.match(markup, /The strongest gene activity patterns supporting this result/)
     assert.match(markup, /Technical details/)
@@ -326,8 +326,8 @@ describe('analysis workflow surfaces', () => {
 
     assert.match(header, /Checking API connection/)
     assert.match(selector, /Loading questions/)
-    assert.match(jsonTab, /Reviewing sample/)
-    assert.match(csvTab, /Reviewing sample/)
+    assert.match(jsonTab, /Reviewing patient data/)
+    assert.match(csvTab, /Reviewing patient data/)
     for (const markup of [header, selector, jsonTab, csvTab]) {
       assert.match(markup, /dna-loader--small/)
       assert.doesNotMatch(markup, /animate-spin/)
@@ -354,7 +354,7 @@ describe('analysis workflow surfaces', () => {
         onConfirm: () => {},
       }),
     )
-    assert.match(markup, /Review your sample/)
+    assert.match(markup, /Review patient data/)
     assert.match(markup, /patients\.csv/)
     assert.match(markup, /File type/)
     assert.match(markup, /Continue/)
@@ -387,7 +387,7 @@ describe('analysis workflow surfaces', () => {
         onBack: () => {},
       }),
     )
-    assert.match(markup, /Understanding this sample&#x27;s result|Understanding this sample's result/)
+    assert.match(markup, /Understanding this patient&#x27;s result|Understanding this patient's result/)
     assert.match(markup, /sample-001/)
     assert.match(markup, /How strongly does the system support this result\?/) 
     assert.match(markup, /Loading explanation/)
