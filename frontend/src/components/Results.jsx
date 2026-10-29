@@ -291,11 +291,8 @@ function CsvResults({
       </div>
     )
   }
-  const countSummary = Object.entries(counts)
-    .map(([label, count]) => `${count} ${label}`)
-    .join(' · ')
   const summaryItems = Object.entries(counts)
-    .slice(0, 3)
+  const totalPatients = rows.length
 
   return (
     <div className="space-y-5">
@@ -307,9 +304,7 @@ function CsvResults({
               Results are ready
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              Results are available for {result.samples_processed}{' '}
-              {result.samples_processed === 1 ? 'patient' : 'patients'}
-              {model?.predicts_label ? ` for ${model.predicts_label.toLowerCase()}` : ''}.
+              Total patients analyzed: <span className="font-semibold text-slate-900">{totalPatients}</span>
             </p>
             <p className="mt-1 text-xs text-slate-500">
               File received: <span className="font-medium">{result.filename}</span>
@@ -317,7 +312,7 @@ function CsvResults({
           </div>
         </div>
         {summaryItems.length > 0 && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {summaryItems.map(([label, count]) => (
               <div key={label} className="border-l-2 border-[#2f7b78] bg-slate-50 px-4 py-3">
                 <p className="text-2xl font-semibold tabular-nums text-slate-950">{count}</p>
@@ -326,7 +321,9 @@ function CsvResults({
             ))}
           </div>
         )}
-        {countSummary && <p className="mt-4 text-xs text-slate-500">Breakdown: {countSummary}</p>}
+        <p className="mt-4 text-sm leading-6 text-slate-600">
+          View the detailed results below to see which patients received each prediction and understand the gene activity patterns that influenced the results.
+        </p>
       </div>
 
       {selectedRow && (

@@ -18,16 +18,16 @@ describe('batch result interpretation', () => {
       { sample_index: 1, prediction: '0', probability: 0.9, class_probabilities: { 0: 0.9, 1: 0.1 } },
     ]
 
-    assert.equal(interpretClass(tsvResults[0].prediction, relapseModel), 'Relapse (True)')
-    assert.equal(interpretClass(tsvResults[1].prediction, relapseModel), 'No relapse (False)')
+    assert.equal(interpretClass(tsvResults[0].prediction, relapseModel), 'Relapse')
+    assert.equal(interpretClass(tsvResults[1].prediction, relapseModel), 'No relapse')
     assert.deepEqual(summarizeBatch(tsvResults, relapseModel), {
-      'Relapse (True)': 1,
-      'No relapse (False)': 1,
+      'No relapse predicted': 1,
+      'Relapse predicted': 1,
     })
 
     const interpreted = interpretPrediction(tsvResults[0].prediction, relapseModel)
     assert.equal(interpreted.target, 'Disease relapse')
-    assert.equal(interpreted.classLabel, 'Relapse (True)')
+    assert.equal(interpreted.classLabel, 'Relapse')
     assert.match(interpreted.summary, /not an independent clinical diagnosis/)
   })
 })
