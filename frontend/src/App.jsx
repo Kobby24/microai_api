@@ -40,6 +40,8 @@ export default function App() {
     explanationReducer,
     initialExplanationState,
   )
+  const patientDataSectionRef = useRef(null)
+  const shouldScrollToPatientDataRef = useRef(false)
   const explanationRequestId = useRef(0)
   const explanationAbortController = useRef(null)
   const batchSourceRef = useRef(null)
@@ -376,6 +378,12 @@ export default function App() {
     setWorkflowStep(selectedModel ? 'input' : 'model')
   }
 
+  function handleOpenPatientData() {
+    setError('')
+    shouldScrollToPatientDataRef.current = true
+    setWorkflowStep(selectedModel ? 'input' : 'model')
+  }
+
   function handleBackToInput() {
     setPendingMode(null)
     setReviewOpen(false)
@@ -409,6 +417,16 @@ export default function App() {
     setSelectedBatchRow(null)
     resetExplanation()
   }
+
+  useEffect(() => {
+    if (!shouldScrollToPatientDataRef.current || workflowStep === 'start') return
+
+    patientDataSectionRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+    shouldScrollToPatientDataRef.current = false
+  }, [workflowStep])
 
   const selectedMeta = models.find((model) => model.name === selectedModel) || null
   const questionPrompt =
@@ -446,6 +464,16 @@ export default function App() {
               <div>
                 <p className="eyebrow">Question selection</p>
                 <h3 className="mt-2 text-2xl font-semibold text-slate-950">What would you like to find out?</h3>
+              </div>
+              <div className="flex justify-start">
+                <button
+                  type="button"
+                  onClick={handleOpenPatientData}
+                  className="add-patient-button"
+                  aria-label="Add patient data"
+                >
+                  Add patient data
+                </button>
               </div>
               <ModelSelector
                 models={models}
@@ -486,7 +514,7 @@ export default function App() {
         )}
 
         {workflowStep !== 'start' && workflowStep !== 'results' && workflowStep !== 'analyzing' && !explanationView && (
-          <div className="space-y-8">
+          <div className="space-y-8" ref={patientDataSectionRef} id="patient-data-section">
             <div>
               <p className="eyebrow">02 / Provide patient data</p>
               <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Add patient data</h2>
