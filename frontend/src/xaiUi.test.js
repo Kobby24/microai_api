@@ -338,8 +338,8 @@ describe('analysis workflow surfaces', () => {
 
     assert.match(header, /Checking API connection/)
     assert.match(selector, /Loading questions/)
-    assert.match(jsonTab, /Running model/)
-    assert.match(csvTab, /Processing batch/)
+    assert.match(jsonTab, /Reviewing sample/)
+    assert.match(csvTab, /Reviewing sample/)
     for (const markup of [header, selector, jsonTab, csvTab]) {
       assert.match(markup, /dna-loader--small/)
       assert.doesNotMatch(markup, /animate-spin/)
@@ -366,10 +366,10 @@ describe('analysis workflow surfaces', () => {
         onConfirm: () => {},
       }),
     )
-    assert.match(markup, /Confirm analysis/)
+    assert.match(markup, /Review your sample/)
     assert.match(markup, /patients\.csv/)
-    assert.match(markup, /Data format/) 
-    assert.match(markup, /Run analysis/)
+    assert.match(markup, /File type/)
+    assert.match(markup, /Continue/)
     assert.doesNotMatch(markup, /expression map|feature_id/) 
   })
 

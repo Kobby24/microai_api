@@ -64,12 +64,23 @@ export default function CsvTab({
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-blue-700 shadow-sm ring-1 ring-slate-200">
           <Upload className="h-5 w-5" />
         </div>
-        <p className="text-sm font-semibold text-slate-800">
-          Drop a CSV or TSV file here, or browse to select one
+        <p className="text-lg font-semibold text-slate-900">Upload your sample data</p>
+        <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
+          Drag and drop your file here, or choose a file from your computer.
         </p>
-        <p className="mt-1 text-xs text-slate-500">
-          CSV or TSV. Include feature IDs in the header or first column.
+        <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+          Supported files: CSV or TSV
         </p>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            inputRef.current?.click()
+          }}
+          className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800"
+        >
+          Choose a file
+        </button>
       </div>
 
       {file && (
@@ -96,15 +107,21 @@ export default function CsvTab({
         </div>
       )}
 
-      <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-        <p>
-          <span className="font-semibold">Feature IDs must match the selected model.</span>
-          {formatGeneCount(model?.expected_genes)
-            ? ` (${formatGeneCount(model.expected_genes)} for ${model.display_name || model.name})`
-            : ''}
-          {' '}Sample rows need every feature ID in the header; a sample-ID column is optional. Gene rows need feature IDs in the first column and samples in the remaining columns. Values must be finite.
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
+        <p className="font-semibold text-slate-800">Before you upload</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Your file should contain the gene expression measurements for your sample.
         </p>
+        <details className="mt-3">
+          <summary className="cursor-pointer list-none font-medium text-slate-800">View file requirements</summary>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-600">
+            <li>Required gene IDs</li>
+            <li>Number of measurements: {formatGeneCount(model?.expected_genes) || 'depends on the selected question'}</li>
+            <li>Accepted file structure for CSV or TSV uploads</li>
+            <li>Sample ID requirements</li>
+            <li>Missing or invalid values</li>
+          </ul>
+        </details>
       </div>
 
       <div className="flex justify-end">
@@ -113,8 +130,8 @@ export default function CsvTab({
           disabled={disabled || loading}
           className="inline-flex min-w-52 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading && <DnaLoader size="small" label="Processing batch" />}
-          {loading ? 'Processing file' : 'Review analysis'}
+          {loading && <DnaLoader size="small" label="Reviewing sample" />}
+          {loading ? 'Reviewing sample' : 'Review sample'}
         </button>
       </div>
     </form>

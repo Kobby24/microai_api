@@ -411,10 +411,16 @@ export default function App() {
   }
 
   const selectedMeta = models.find((model) => model.name === selectedModel) || null
+  const questionPrompt =
+    selectedMeta?.predicts === 'relapse'
+      ? 'Is the breast cancer associated with relapse?'
+      : selectedMeta?.predicts === 'estrogen_receptor_status'
+        ? 'Is the breast cancer ER positive or ER negative?'
+        : 'Choose a question to continue.'
 
   const tabs = [
-    { id: 'json', label: 'Single Sample (JSON)', icon: Braces },
-    { id: 'csv', label: 'Batch Predict (CSV / TSV)', icon: FileSpreadsheet },
+    { id: 'json', label: 'One sample', icon: Braces },
+    { id: 'csv', label: 'Multiple samples', icon: FileSpreadsheet },
   ]
 
   return (
@@ -482,12 +488,12 @@ export default function App() {
         {workflowStep !== 'start' && workflowStep !== 'results' && workflowStep !== 'analyzing' && !explanationView && (
           <div className="space-y-8">
             <div>
-              <p className="eyebrow">New analysis</p>
-              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Prepare your analysis</h2>
-              <p className="mt-2 text-sm text-slate-600">Choose a model and input format for your research question.</p>
+              <p className="eyebrow">02 / Provide sample data</p>
+              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">Add your sample data</h2>
+              <p className="mt-2 text-sm text-slate-600">Provide the gene expression data for the breast cancer sample you want to examine.</p>
             </div>
             <div className="workflow-track" aria-label="Analysis workflow">
-              {['Model', 'Data', 'Results'].map((label, index) => {
+              {['Question', 'Sample data', 'Results'].map((label, index) => {
                 const step = ['model', 'input', 'results'][index]
                 const active = step === workflowStep || (workflowStep === 'input' && step === 'model')
                 return <span key={label} className={active ? 'workflow-step workflow-step-active' : 'workflow-step'}><b>0{index + 1}</b>{label}</span>
@@ -506,12 +512,17 @@ export default function App() {
 
             {workflowStep === 'input' && selectedMeta && (
               <section className="surface-panel p-6">
-                <div className="mb-6 flex items-end justify-between gap-4 border-b border-slate-200 pb-5">
-                  <div>
-                    <p className="eyebrow">02 / Provide data</p>
-                    <h3 className="mt-2 text-xl font-semibold text-slate-950">Choose an input format</h3>
+                <div className="mb-6 border-b border-slate-200 pb-5">
+                  <p className="eyebrow">02 / Provide sample data</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add your sample data</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                    Provide the gene expression data for the breast cancer sample you want to examine.
+                  </p>
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Question we're exploring</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{selectedMeta.predicts_label || 'Selected question'}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">{questionPrompt}</p>
                   </div>
-                  <p className="hidden text-right text-xs text-slate-500 sm:block">Model: {selectedMeta.display_name || selectedMeta.name}</p>
                 </div>
                 <div className="flex border-b border-slate-200">
                   {tabs.map(({ id, label, icon: Icon }) => (

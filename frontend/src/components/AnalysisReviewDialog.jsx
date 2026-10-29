@@ -14,7 +14,13 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
   }, [onCancel])
 
   const isBatch = mode === 'csv'
-  const inputLabel = isBatch ? file?.name || 'Selected CSV or TSV file' : sampleId?.trim() || 'Single sample'
+  const question = model?.predicts_label || 'Selected question'
+  const questionPrompt = model?.predicts === 'relapse'
+    ? 'Is the breast cancer associated with relapse?'
+    : model?.predicts === 'estrogen_receptor_status'
+      ? 'Is the breast cancer ER positive or ER negative?'
+      : 'Question to review.'
+  const sampleLabel = isBatch ? file?.name || 'Selected sample data file' : sampleId?.trim() || 'Single sample'
   const format = isBatch ? file?.name?.toLowerCase().endsWith('.tsv') ? 'TSV' : 'CSV' : 'JSON expression map'
 
   return (
@@ -24,22 +30,46 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
       <section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title">
         <div className="flex items-start justify-between gap-5 border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 id="review-dialog-title" className="text-2xl font-semibold text-slate-950">Confirm analysis</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Check the model and input details before running.</p>
+            <h2 id="review-dialog-title" className="text-2xl font-semibold text-slate-950">Review your sample</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Before continuing, check that your question and sample data are correct.</p>
           </div>
           <button ref={closeButtonRef} type="button" onClick={onCancel} className="icon-button" aria-label="Close review dialog">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <dl className="grid gap-5 px-6 py-6 sm:grid-cols-2">
-          <div><dt className="meta-label">Model</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{model?.display_name || model?.name || 'Selected model'}</dd></div>
-          <div><dt className="meta-label">Input</dt><dd className="mt-1 truncate text-sm font-semibold text-slate-900">{inputLabel}</dd></div>
-          <div><dt className="meta-label">Analysis mode</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{isBatch ? 'Multiple samples' : 'Single sample'}</dd></div>
-          <div><dt className="meta-label">Data format</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{format}</dd></div>
-        </dl>
+
+        <div className="space-y-6 px-6 py-6">
+          <div>
+            <p className="meta-label">Question</p>
+            <p className="mt-1 text-lg font-semibold text-slate-900">{question}</p>
+            <p className="mt-2 text-sm text-slate-600">{questionPrompt}</p>
+          </div>
+
+          <div>
+            <p className="meta-label">Sample data</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{sampleLabel}</p>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <dt className="meta-label">Samples</dt>
+              <dd className="mt-1 text-sm font-semibold text-slate-900">{isBatch ? 'Multiple samples' : 'Single sample'}</dd>
+            </div>
+            <div>
+              <dt className="meta-label">File type</dt>
+              <dd className="mt-1 text-sm font-semibold text-slate-900">{format}</dd>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-900">Ready to continue?</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Your sample data will be reviewed to provide a result for the question above.</p>
+          </div>
+        </div>
+
         <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onCancel} className="secondary-button">Cancel</button>
-          <button type="button" onClick={onConfirm} className="primary-button">Run analysis</button>
+          <button type="button" onClick={onCancel} className="secondary-button">Back</button>
+          <button type="button" onClick={onConfirm} className="primary-button">Continue</button>
         </div>
       </section>
     </div>
