@@ -96,6 +96,7 @@ let DnaLoader
 let Header
 let ModelSelector
 let JsonTab
+let CelTab
 let CsvTab
 
 before(async () => {
@@ -113,6 +114,7 @@ before(async () => {
   Header = (await vite.ssrLoadModule('/src/components/Header.jsx')).default
   ModelSelector = (await vite.ssrLoadModule('/src/components/ModelSelector.jsx')).default
   JsonTab = (await vite.ssrLoadModule('/src/components/JsonTab.jsx')).default
+  CelTab = (await vite.ssrLoadModule('/src/components/CelTab.jsx')).default
   CsvTab = (await vite.ssrLoadModule('/src/components/CsvTab.jsx')).default
 })
 
@@ -406,5 +408,36 @@ describe('analysis workflow surfaces', () => {
     )
     assert.match(unavailable, /No prediction available/)
     assert.match(unavailable, /Back to analysis/)
+  })
+
+  it('renders a CEL upload panel for single-patient entry and keeps CSV upload separate', async () => {
+    const celMarkup = renderToStaticMarkup(
+      React.createElement(CelTab, {
+        file: null,
+        onFileChange: () => {},
+        isDragging: false,
+        onDragState: () => {},
+        onSubmit: () => {},
+        loading: false,
+        disabled: false,
+        model,
+      }),
+    )
+    const csvMarkup = renderToStaticMarkup(
+      React.createElement(CsvTab, {
+        file: null,
+        onFileChange: () => {},
+        isDragging: false,
+        onDragState: () => {},
+        onSubmit: () => {},
+        loading: false,
+        disabled: false,
+        model,
+      }),
+    )
+
+    assert.match(celMarkup, /Affymetrix CEL file/)
+    assert.match(celMarkup, /\.CEL\.gz/)
+    assert.match(csvMarkup, /CSV or TSV/)
   })
 })

@@ -346,3 +346,64 @@ def test_prediction_failure_is_sanitized(client, fake_model):
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Prediction failed."}
+
+
+def test_predict_cel_requires_declared_model_compatibility(client, fake_model, monkeypatch):
+    monkeypatch.setitem(main.MODEL_CEL_COMPATIBILITY, "gse7390", False)
+    payload = b"not a valid cel file"
+    response = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL.gz", payload, "application/gzip")},
+    )
+
+    assert response.status_code == 503
+    assert "GPL96 MAS5 compatibility" in response.json()["detail"]
+
+
+def test_predict_cel_processes_valid_gzip_input_and_returns_expression_for_explanation(client, fake_model, monkeypatch):
+    import gzip
+
+    monkeypatch.setitem(main.MODEL_CEL_COMPATIBILITY, "gse7390", True)
+    monkeypatch.setattr(
+        main,
+        "run_affy_preprocessing",
+        lambda _path: ({"g1": 1.0, "g2": 2.0, "g3": 3.0}, [1.0, 2.0, 3.0]),
+    )
+
+    payload = gzip.compress(b"fake cel contents")
+    response = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL.gz", payload, "application/gzip")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prediction"] == "1"
+    assert body["expression"] == [1.0, 2.0, 3.0]
+    assert body["feature_ids"] == FEATURE_IDS
+    assert body["sample_id"] is None
+
+
+def test_predict_cel_rejects_invalid_gzip_and_missing_feature_ids(client, fake_model, monkeypatch):
+    import gzip
+
+    monkeypatch.setitem(main.MODEL_CEL_COMPATIBILITY, "gse7390", True)
+
+    invalid = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL.gz", b"not a gzip archive", "application/gzip")},
+    )
+    assert invalid.status_code == 400
+    assert "gzip" in invalid.json()["detail"].lower()
+
+    monkeypatch.setattr(
+        main,
+        "run_affy_preprocessing",
+        lambda _path: ({"g1": 1.0, "g2": 4.0}, [1.0, 4.0]),
+    )
+    invalid_ids = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL.gz", gzip.compress(b"still fake"), "application/gzip")},
+    )
+    assert invalid_ids.status_code == 400
+    assert "match this model's required gene/probe set" in invalid_ids.json()["detail"]

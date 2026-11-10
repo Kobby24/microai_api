@@ -1,7 +1,11 @@
 import csv
+import gzip
+import json
 import joblib
 import logging
 import sqlite3
+import subprocess
+import tempfile
 import numpy as np
 import os
 from pathlib import Path
@@ -225,6 +229,46 @@ MODEL_CATALOG = {
         },
     },
 }
+
+MODEL_CEL_COMPATIBILITY = {"gse7390": False, "gse2034": False}
+
+
+def run_affy_preprocessing(cel_path: str):
+    script_path = Path(__file__).resolve().parent / "affy_mas5.R"
+    if not script_path.is_file():
+        raise FileNotFoundError("The Affymetrix MAS5 preprocessing script is unavailable.")
+    try:
+        completed = subprocess.run(
+            ["Rscript", "--vanilla", str(script_path), str(cel_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("Rscript is required to preprocess Affymetrix CEL files.") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(exc.stderr.strip() or "Affymetrix CEL preprocessing failed in R.") from exc
+
+    output = completed.stdout.strip()
+    if not output:
+        raise RuntimeError("Affymetrix CEL preprocessing returned no expression data.")
+
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Affymetrix CEL preprocessing returned malformed expression data.") from exc
+
+    feature_ids = payload.get("feature_ids")
+    values = payload.get("values")
+    if not isinstance(feature_ids, list) or not isinstance(values, list):
+        raise RuntimeError("Affymetrix CEL preprocessing did not return feature IDs and values.")
+    if len(feature_ids) != len(values):
+        raise RuntimeError("Affymetrix CEL preprocessing returned mismatched feature IDs and values.")
+
+    normalized = {}
+    for feature_id, value in zip(feature_ids, values):
+        normalized[str(feature_id)] = float(value)
+    return normalized, [float(value) for value in values]
 
 
 def _expected_genes(model) -> Optional[int]:
@@ -883,6 +927,96 @@ def predict_json(model_name: str, request: PredictionRequest):
         class_probabilities={key: float(value) for key, value in zip(class_keys, proba)},
         sample_id=request.sample_id,
     )
+
+
+class CelPredictionResponse(PredictionResponse):
+    expression: List[float]
+    feature_ids: List[str]
+
+
+@app.post(
+    "/predict_cel/{model_name}",
+    response_model=CelPredictionResponse,
+)
+async def predict_cel(model_name: str, file: UploadFile = File(...)):
+    model_name = model_name.lower()
+    if model_name not in MODELS:
+        raise HTTPException(status_code=404, detail="Model not found")
+    if not MODEL_CEL_COMPATIBILITY.get(model_name, False):
+        raise HTTPException(
+            status_code=503,
+            detail=f"This model is not compatible with GPL96 MAS5 Affymetrix CEL uploads. Confirm GPL96 MAS5 compatibility before using {model_name.upper()}.",
+        )
+
+    name = (file.filename or "").strip()
+    if not name.lower().endswith(".cel.gz"):
+        raise HTTPException(status_code=400, detail="Only .CEL.gz files are supported for single-patient Affymetrix uploads.")
+
+    model = MODELS[model_name]
+    _require_model_ready(model_name, model)
+    expected_ids = _feature_ids(model)
+    if expected_ids is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Predictions are unavailable because this model has no verified gene/probe schema.",
+        )
+
+    try:
+        buffer = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(buffer) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
+        gzip.decompress(buffer)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
+    except Exception as exc:
+        logger.exception("Unable to validate uploaded CEL file")
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
+
+    with tempfile.NamedTemporaryFile(suffix=".CEL.gz", delete=False) as tmp:
+        tmp.write(buffer)
+        tmp_path = tmp.name
+
+    try:
+        try:
+            feature_map, ordered_values = run_affy_preprocessing(tmp_path)
+        except Exception as exc:
+            logger.exception("CEL preprocessing failed for %s", model_name)
+            raise HTTPException(status_code=500, detail="CEL preprocessing failed.") from exc
+
+        missing = [feature_id for feature_id in expected_ids if feature_id not in feature_map]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail="Feature identifiers do not match this model's required gene/probe set.",
+            )
+
+        ordered = np.asarray([feature_map[feature_id] for feature_id in expected_ids], dtype=float)
+        if not np.isfinite(ordered).all():
+            raise HTTPException(
+                status_code=400,
+                detail="CEL-derived expression values must be numeric and finite.",
+            )
+
+        X = ordered.reshape(1, -1)
+        predictions, probabilities, class_keys = _checked_predictions(model, X)
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    probability_vector = probabilities[0]
+    payload = CelPredictionResponse(
+        prediction=_normalize_class_label(predictions[0]),
+        probability=float(np.max(probability_vector)),
+        class_probabilities={key: float(value) for key, value in zip(class_keys, probability_vector)},
+        sample_id=None,
+        expression=[float(value) for value in ordered_values],
+        feature_ids=list(expected_ids),
+    )
+    return payload.model_dump(exclude_none=False)
 
 
 @app.post(

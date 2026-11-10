@@ -14,14 +14,15 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
   }, [onCancel])
 
   const isBatch = mode === 'csv'
+  const isCel = mode === 'cel'
   const question = model?.predicts_label || 'Selected question'
   const questionPrompt = model?.predicts === 'relapse'
     ? 'Is the breast cancer associated with relapse?'
     : model?.predicts === 'estrogen_receptor_status'
       ? 'Is the breast cancer ER positive or ER negative?'
       : 'Question to review.'
-  const sampleLabel = isBatch ? file?.name || 'Selected patient data file' : sampleId?.trim() || 'Single patient'
-  const format = isBatch ? file?.name?.toLowerCase().endsWith('.tsv') ? 'TSV' : 'CSV' : 'JSON expression map'
+  const sampleLabel = isBatch ? file?.name || 'Selected patient data file' : (isCel ? file?.name || 'Single patient CEL file' : sampleId?.trim() || 'Single patient')
+  const format = isBatch ? file?.name?.toLowerCase().endsWith('.tsv') ? 'TSV' : 'CSV' : isCel ? 'Affymetrix CEL (.CEL.gz)' : 'JSON expression map'
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => {

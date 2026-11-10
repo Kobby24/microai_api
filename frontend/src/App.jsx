@@ -1,10 +1,10 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { Braces, FileSpreadsheet } from 'lucide-react'
-import { explainJson, extractApiError, fetchHealth, fetchModels, predictCsv, predictJson } from './api'
+import { explainJson, extractApiError, fetchHealth, fetchModels, predictCel, predictCsv, predictJson } from './api'
 import Header from './components/Header'
 import ModelSelector from './components/ModelSelector'
 import ErrorBanner from './components/ErrorBanner'
-import JsonTab from './components/JsonTab'
+import CelTab from './components/CelTab'
 import CsvTab from './components/CsvTab'
 import Results from './components/Results'
 import AnalysisReviewDialog from './components/AnalysisReviewDialog'
@@ -20,9 +20,10 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState('')
   const [apiStatus, setApiStatus] = useState('loading')
   const [modelsLoading, setModelsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('json')
+  const [activeTab, setActiveTab] = useState('cel')
   const [jsonInput, setJsonInput] = useState('')
   const [sampleId, setSampleId] = useState('')
+  const [celFile, setCelFile] = useState(null)
   const [csvFile, setCsvFile] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -132,6 +133,22 @@ export default function App() {
     setReviewOpen(true)
   }
 
+  function handleCelSubmit(event) {
+    event.preventDefault()
+    setError('')
+    if (!selectedModel) {
+      setError('Select a model first.')
+      setWorkflowStep('model')
+      return
+    }
+    if (!celFile) {
+      setError('Select a .CEL.gz file first.')
+      return
+    }
+    setPendingMode('cel')
+    setReviewOpen(true)
+  }
+
   async function runJsonPrediction() {
     setError('')
     setJsonResult(null)
@@ -175,6 +192,39 @@ export default function App() {
     setReviewOpen(true)
   }
 
+  async function runCelPrediction() {
+    setError('')
+    setJsonResult(null)
+    setCsvResult(null)
+    setJsonRequest(null)
+    resetBatchSelection()
+    resetExplanation()
+
+    try {
+      requireModel()
+      if (!selectedMeta?.ready) {
+        throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for predictions.')
+      }
+      if (!celFile) {
+        throw new Error('Select a .CEL.gz file first.')
+      }
+      setLoading(true)
+      const result = await predictCel(selectedModel, celFile)
+      setJsonResult(result)
+      setJsonRequest({
+        expression: result.expression,
+        featureIds: result.feature_ids,
+        sampleId: result.sample_id || sampleId.trim(),
+      })
+      return true
+    } catch (err) {
+      setError(err.response || err.request ? extractApiError(err) : err.message)
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runCsvPrediction() {
     setError('')
     setJsonResult(null)
@@ -202,6 +252,16 @@ export default function App() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function handleCelFileChange(file, fileError) {
+    setCelFile(file)
+    resetBatchSelection()
+    resetExplanation()
+    setError(fileError || '')
+    setJsonResult(null)
+    setCsvResult(null)
+    setJsonRequest(null)
   }
 
   function handleCsvFileChange(file, fileError) {
@@ -363,6 +423,7 @@ export default function App() {
 
   function handleModelChange(name) {
     setSelectedModel(name)
+    setCelFile(null)
     setCsvFile(null)
     resetBatchSelection()
     setJsonResult(null)
@@ -394,7 +455,11 @@ export default function App() {
     const mode = pendingMode
     setReviewOpen(false)
     setWorkflowStep('analyzing')
-    const success = mode === 'json' ? await runJsonPrediction() : await runCsvPrediction()
+    const success = mode === 'json'
+      ? await runJsonPrediction()
+      : mode === 'cel'
+        ? await runCelPrediction()
+        : await runCsvPrediction()
     setPendingMode(null)
     setWorkflowStep(success ? 'results' : 'input')
   }
@@ -437,7 +502,7 @@ export default function App() {
         : 'Choose a question to continue.'
 
   const tabs = [
-    { id: 'json', label: 'One patient', icon: Braces },
+    { id: 'cel', label: 'One patient', icon: Braces },
     { id: 'csv', label: 'Multiple patients', icon: FileSpreadsheet },
   ]
 
@@ -560,7 +625,9 @@ export default function App() {
                   ))}
                 </div>
                 <div className="pt-6">
-                  {activeTab === 'json' ? <JsonTab value={jsonInput} onChange={handleJsonInputChange} sampleId={sampleId} onSampleIdChange={handleSampleIdChange} onSubmit={handleJsonSubmit} loading={loading} disabled={loading || !selectedMeta?.ready} model={selectedMeta} /> : <CsvTab file={csvFile} onFileChange={handleCsvFileChange} isDragging={isDragging} onDragState={setIsDragging} onSubmit={handleCsvSubmit} loading={loading} disabled={loading || !selectedMeta?.ready} model={selectedMeta} />}
+                  {activeTab === 'cel'
+                    ? <CelTab file={celFile} onFileChange={handleCelFileChange} sampleId={sampleId} onSampleIdChange={handleSampleIdChange} onSubmit={handleCelSubmit} loading={loading} disabled={loading || !selectedMeta?.ready} model={selectedMeta} />
+                    : <CsvTab file={csvFile} onFileChange={handleCsvFileChange} isDragging={isDragging} onDragState={setIsDragging} onSubmit={handleCsvSubmit} loading={loading} disabled={loading || !selectedMeta?.ready} model={selectedMeta} />}
                 </div>
               </section>
             )}
@@ -592,7 +659,7 @@ export default function App() {
           </div>
         )}
       </main>
-      {reviewOpen && <AnalysisReviewDialog model={selectedMeta} mode={pendingMode} file={csvFile} sampleId={sampleId} onCancel={handleBackToInput} onConfirm={handleRunAnalysis} />}
+      {reviewOpen && <AnalysisReviewDialog model={selectedMeta} mode={pendingMode} file={pendingMode === 'cel' ? celFile : csvFile} sampleId={sampleId} onCancel={handleBackToInput} onConfirm={handleRunAnalysis} />}
       {loading && <AnalysisLoadingOverlay mode={pendingMode} />}
     </div>
   )

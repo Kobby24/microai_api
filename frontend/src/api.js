@@ -83,3 +83,13 @@ export async function predictCsv(modelName, file) {
   )
   return data
 }
+
+export async function predictCel(modelName, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await client.post(
+    `/predict_cel/${encodeURIComponent(modelName)}`,
+    form,
+  )
+  return data
+}
