@@ -231,8 +231,6 @@ MODEL_CATALOG = {
     },
 }
 
-MODEL_CEL_COMPATIBILITY = {"gse7390": False, "gse2034": False}
-
 
 def run_affy_preprocessing(cel_path: str):
     script_path = Path(__file__).resolve().parent / "affy_mas5.R"
@@ -944,12 +942,6 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
     if model_name not in MODELS:
         print(f"predict_cel: model not found: {model_name}")
         raise HTTPException(status_code=404, detail="Model not found")
-    if not MODEL_CEL_COMPATIBILITY.get(model_name, False):
-        print(f"predict_cel: model {model_name} is not marked compatible with GPL96 MAS5 CEL uploads")
-        raise HTTPException(
-            status_code=503,
-            detail=f"This model is not compatible with GPL96 MAS5 Affymetrix CEL uploads. Confirm GPL96 MAS5 compatibility before using {model_name.upper()}.",
-        )
 
     name = (file.filename or "").strip().lower()
     if not name.endswith(".cel.gz") and not name.endswith(".cel"):
