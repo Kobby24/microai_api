@@ -22,7 +22,7 @@ export default function AnalysisReviewDialog({ model, mode, file, sampleId, onCa
       ? 'Is the breast cancer ER positive or ER negative?'
       : 'Question to review.'
   const sampleLabel = isBatch ? file?.name || 'Selected patient data file' : (isCel ? file?.name || 'Single patient CEL file' : sampleId?.trim() || 'Single patient')
-  const format = isBatch ? file?.name?.toLowerCase().endsWith('.tsv') ? 'TSV' : 'CSV' : isCel ? 'Affymetrix CEL (.CEL.gz)' : 'JSON expression map'
+  const format = isBatch ? file?.name?.toLowerCase().endsWith('.tsv') ? 'TSV' : 'CSV' : isCel ? 'Affymetrix CEL (.CEL or .CEL.gz)' : 'JSON expression map'
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => {

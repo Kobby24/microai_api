@@ -97,6 +97,7 @@ let Header
 let ModelSelector
 let JsonTab
 let CelTab
+let isSupportedCelFilename
 let CsvTab
 
 before(async () => {
@@ -114,7 +115,9 @@ before(async () => {
   Header = (await vite.ssrLoadModule('/src/components/Header.jsx')).default
   ModelSelector = (await vite.ssrLoadModule('/src/components/ModelSelector.jsx')).default
   JsonTab = (await vite.ssrLoadModule('/src/components/JsonTab.jsx')).default
-  CelTab = (await vite.ssrLoadModule('/src/components/CelTab.jsx')).default
+  const celTabModule = await vite.ssrLoadModule('/src/components/CelTab.jsx')
+  CelTab = celTabModule.default
+  isSupportedCelFilename = celTabModule.isSupportedCelFilename
   CsvTab = (await vite.ssrLoadModule('/src/components/CsvTab.jsx')).default
 })
 
@@ -437,7 +440,15 @@ describe('analysis workflow surfaces', () => {
     )
 
     assert.match(celMarkup, /Affymetrix CEL file/)
-    assert.match(celMarkup, /\.CEL\.gz/)
+    assert.match(celMarkup, /accept="\.cel,\.CEL,\.Cel,\.cel\.gz,\.CEL\.gz,\.Cel\.gz"/)
+    assert.match(celMarkup, /\.CEL and \.CEL\.gz \(any capitalization\)/)
     assert.match(csvMarkup, /CSV or TSV/)
+  })
+
+  it('accepts CEL and CEL.gz extensions in any capitalization', () => {
+    for (const filename of ['sample.cel', 'sample.CEL', 'sample.Cel', 'sample.cel.gz', 'sample.CEL.gz', 'sample.Cel.gz']) {
+      assert.equal(isSupportedCelFilename(filename), true, filename)
+    }
+    assert.equal(isSupportedCelFilename('sample.cel.txt'), false)
   })
 })

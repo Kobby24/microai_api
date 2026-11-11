@@ -142,7 +142,7 @@ export default function App() {
       return
     }
     if (!celFile) {
-      setError('Select a .CEL.gz file first.')
+      setError('Select a .CEL or .CEL.gz file first.')
       return
     }
     setPendingMode('cel')
@@ -206,7 +206,7 @@ export default function App() {
         throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for predictions.')
       }
       if (!celFile) {
-        throw new Error('Select a .CEL.gz file first.')
+        throw new Error('Select a .CEL or .CEL.gz file first.')
       }
       setLoading(true)
       const result = await predictCel(selectedModel, celFile)

@@ -360,28 +360,64 @@ def test_predict_cel_requires_declared_model_compatibility(client, fake_model, m
     assert "GPL96 MAS5 compatibility" in response.json()["detail"]
 
 
-def test_predict_cel_processes_valid_gzip_input_and_returns_expression_for_explanation(client, fake_model, monkeypatch):
+@pytest.mark.parametrize(
+    ("filename", "compressed"),
+    [
+        ("sample.cel", False),
+        ("sample.CEL", False),
+        ("sample.Cel", False),
+        ("sample.cel.gz", True),
+        ("sample.CEL.gz", True),
+        ("sample.Cel.gz", True),
+    ],
+)
+def test_predict_cel_processes_supported_filename_variations(client, fake_model, monkeypatch, filename, compressed):
     import gzip
+    from pathlib import Path
 
     monkeypatch.setitem(main.MODEL_CEL_COMPATIBILITY, "gse7390", True)
+    cel_contents = b"fake cel contents"
+    seen_inputs = []
+
+    def preprocess(path):
+        path = Path(path)
+        seen_inputs.append((path.suffix, path.read_bytes()))
+        return {"g1": 1.0, "g2": 2.0, "g3": 3.0}, [1.0, 2.0, 3.0]
+
     monkeypatch.setattr(
         main,
         "run_affy_preprocessing",
-        lambda _path: ({"g1": 1.0, "g2": 2.0, "g3": 3.0}, [1.0, 2.0, 3.0]),
+        preprocess,
     )
 
-    payload = gzip.compress(b"fake cel contents")
+    payload = gzip.compress(cel_contents) if compressed else cel_contents
     response = client.post(
         "/predict_cel/gse7390",
-        files={"file": ("sample.CEL.gz", payload, "application/gzip")},
+        files={"file": (filename, payload, "application/octet-stream")},
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["prediction"] == "1"
-    assert body["expression"] == [1.0, 2.0, 3.0]
-    assert body["feature_ids"] == FEATURE_IDS
-    assert body["sample_id"] is None
+    assert body == {
+        "prediction": "1",
+        "probability": 0.8,
+        "class_probabilities": {"0": 0.2, "1": 0.8},
+        "sample_id": None,
+        "expression": [1.0, 2.0, 3.0],
+        "feature_ids": FEATURE_IDS,
+    }
+    assert seen_inputs == [(".CEL", cel_contents)]
+
+
+def test_predict_cel_rejects_unsupported_extension(client, monkeypatch):
+    monkeypatch.setitem(main.MODEL_CEL_COMPATIBILITY, "gse7390", True)
+    response = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.cel.txt", b"fake cel contents", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert "Only .CEL and .CEL.gz" in response.json()["detail"]
 
 
 def test_predict_cel_rejects_invalid_gzip_and_missing_feature_ids(client, fake_model, monkeypatch):

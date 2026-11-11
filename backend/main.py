@@ -1,5 +1,6 @@
 import csv
 import gzip
+import io
 import json
 import joblib
 import logging
@@ -948,9 +949,10 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
             detail=f"This model is not compatible with GPL96 MAS5 Affymetrix CEL uploads. Confirm GPL96 MAS5 compatibility before using {model_name.upper()}.",
         )
 
-    name = (file.filename or "").strip()
-    if not name.lower().endswith(".cel.gz"):
-        raise HTTPException(status_code=400, detail="Only .CEL.gz files are supported for single-patient Affymetrix uploads.")
+    name = (file.filename or "").strip().lower()
+    if not name.endswith(".cel.gz") and not name.endswith(".cel"):
+        raise HTTPException(status_code=400, detail="Only .CEL and .CEL.gz files are supported for single-patient Affymetrix uploads.")
+    is_compressed = name.endswith(".cel.gz")
 
     model = MODELS[model_name]
     _require_model_ready(model_name, model)
@@ -965,7 +967,12 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
         buffer = await file.read(MAX_UPLOAD_BYTES + 1)
         if len(buffer) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
-        gzip.decompress(buffer)
+        cel_contents = buffer
+        if is_compressed:
+            with gzip.GzipFile(fileobj=io.BytesIO(buffer), mode="rb") as compressed_file:
+                cel_contents = compressed_file.read(MAX_UPLOAD_BYTES + 1)
+            if len(cel_contents) > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail="The decompressed CEL file exceeds the configured size limit.")
     except HTTPException:
         raise
     except OSError as exc:
@@ -974,8 +981,8 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
         logger.exception("Unable to validate uploaded CEL file")
         raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
 
-    with tempfile.NamedTemporaryFile(suffix=".CEL.gz", delete=False) as tmp:
-        tmp.write(buffer)
+    with tempfile.NamedTemporaryFile(suffix=".CEL", delete=False) as tmp:
+        tmp.write(cel_contents)
         tmp_path = tmp.name
 
     try:
