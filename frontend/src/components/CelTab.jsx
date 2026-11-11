@@ -3,7 +3,12 @@ import { FileText, Upload, X } from 'lucide-react'
 import { formatGeneCount } from '../interpret'
 import DnaLoader from './ui/DnaLoader'
 
-const ACCEPT = '.CEL,.CEL.gz,.cel,.cel.gz,application/gzip'
+const ACCEPT = '.cel,.CEL,.Cel,.cel.gz,.CEL.gz,.Cel.gz'
+
+export function isSupportedCelFilename(filename) {
+  const normalized = (filename || '').toLowerCase()
+  return normalized.endsWith('.cel.gz') || normalized.endsWith('.cel')
+}
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -26,9 +31,8 @@ export default function CelTab({
 
   function acceptFile(nextFile) {
     if (!nextFile) return
-    const name = (nextFile.name || '').toLowerCase()
-    if (!name.endsWith('.cel.gz') && !name.endsWith('.cel')) {
-      onFileChange(null, 'Accepts .CEL or .CEL.gz files only.')
+    if (!isSupportedCelFilename(nextFile.name)) {
+      onFileChange(null, 'Accepts .CEL and .CEL.gz files in any capitalization.')
       return
     }
     onFileChange(nextFile)
@@ -70,7 +74,7 @@ export default function CelTab({
           Upload a single patient CEL file. The platform will preprocess it with the same GPL96 MAS5 workflow used for model compatibility checks.
         </p>
         <p className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-          Supported files: .CEL or .CEL.gz
+          Supported files: .CEL and .CEL.gz (any capitalization)
         </p>
         <button
           type="button"
@@ -116,7 +120,7 @@ export default function CelTab({
         <details className="mt-3">
           <summary className="cursor-pointer list-none font-medium text-slate-800">View file requirements</summary>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-600">
-            <li>Single-patient .CEL or .CEL.gz upload only</li>
+            <li>Single-patient .CEL or .CEL.gz upload only, any capitalization</li>
             <li>Number of measurements: {formatGeneCount(model?.expected_genes) || 'depends on the selected question'}</li>
             <li>Model compatibility must be enabled for GPL96 MAS5 preprocessing</li>
             <li>Patient ID is optional but recommended for tracking</li>
