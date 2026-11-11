@@ -162,7 +162,7 @@ def _positive_limit(name: str, default: int) -> int:
     return value
 
 
-MAX_UPLOAD_BYTES = _positive_limit("MICROAI_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
+MAX_UPLOAD_BYTES = _positive_limit("MICROAI_MAX_UPLOAD_BYTES", 50 * 1024 * 1024)
 MAX_BATCH_ROWS = _positive_limit("MICROAI_MAX_BATCH_ROWS", 1000)
 MAX_BATCH_CELLS = _positive_limit("MICROAI_MAX_BATCH_CELLS", 1_000_000)
 MAX_JSON_FEATURES = _positive_limit("MICROAI_MAX_JSON_FEATURES", 100_000)

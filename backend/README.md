@@ -10,7 +10,7 @@ JSON requests use `{"expression":[...],"feature_ids":[...],"sample_id":"<optiona
 
 ## Limits
 
-Defaults are 10 MiB per uploaded file, 1,000 batch samples, 1,000,000 expression cells, and 100,000 JSON features. Set `MICROAI_MAX_UPLOAD_BYTES`, `MICROAI_MAX_BATCH_ROWS`, `MICROAI_MAX_BATCH_CELLS`, and `MICROAI_MAX_JSON_FEATURES` to positive integers to adjust these limits.
+Defaults are 50 MiB per uploaded file, 1,000 batch samples, 1,000,000 expression cells, and 100,000 JSON features. Set `MICROAI_MAX_UPLOAD_BYTES`, `MICROAI_MAX_BATCH_ROWS`, `MICROAI_MAX_BATCH_CELLS`, and `MICROAI_MAX_JSON_FEATURES` to positive integers to adjust these limits.
 
 ## Local explanations
 
