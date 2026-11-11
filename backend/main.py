@@ -942,8 +942,10 @@ class CelPredictionResponse(PredictionResponse):
 async def predict_cel(model_name: str, file: UploadFile = File(...)):
     model_name = model_name.lower()
     if model_name not in MODELS:
+        print(f"predict_cel: model not found: {model_name}")
         raise HTTPException(status_code=404, detail="Model not found")
     if not MODEL_CEL_COMPATIBILITY.get(model_name, False):
+        print(f"predict_cel: model {model_name} is not marked compatible with GPL96 MAS5 CEL uploads")
         raise HTTPException(
             status_code=503,
             detail=f"This model is not compatible with GPL96 MAS5 Affymetrix CEL uploads. Confirm GPL96 MAS5 compatibility before using {model_name.upper()}.",
@@ -955,9 +957,14 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
     is_compressed = name.endswith(".cel.gz")
 
     model = MODELS[model_name]
-    _require_model_ready(model_name, model)
+    try:
+        _require_model_ready(model_name, model)
+    except HTTPException as exc:
+        print(f"predict_cel: model {model_name} is not ready: {exc.detail}")
+        raise
     expected_ids = _feature_ids(model)
     if expected_ids is None:
+        print(f"predict_cel: model {model_name} has no verified gene/probe schema")
         raise HTTPException(
             status_code=503,
             detail="Predictions are unavailable because this model has no verified gene/probe schema.",
