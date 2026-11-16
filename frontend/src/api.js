@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://microai-api.onrender.com'
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://microai-api-1.onrender.com'
 
 const client = axios.create({
   baseURL: API_BASE,
