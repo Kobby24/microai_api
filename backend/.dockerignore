@@ -1,0 +1,15 @@
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+*.pyc
+.git
+Dockerfile
+.dockerignore
+# Not used at runtime
+gpl96.db
+geo/
+fd.ipynb
+r.py
+GES7390_demo_x*
+GSE7390_predictions.csv
+apt.txt

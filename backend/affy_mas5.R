@@ -12,11 +12,17 @@ if (!requireNamespace("affy", quietly = TRUE)) {
   stop("The affy package is required for MAS5 preprocessing.")
 }
 
+# affy (mas5) prints progress text to stdout; divert it to stderr so stdout
+# carries only the JSON payload parsed by main.run_affy_preprocessing().
+sink(stderr())
+
 library(affy)
 
 cel_data <- ReadAffy(filenames = cel_path, compress = TRUE)
 processed <- mas5(cel_data, normalize = TRUE, sc = 600)
 log_expression <- log2(exprs(processed))
+
+sink()
 
 feature_ids <- rownames(log_expression)
 values <- as.numeric(log_expression[, 1])
