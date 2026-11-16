@@ -66,3 +66,13 @@ Frontend integration requirements: display an Explain action only when model met
 Configure a verified, feature-ID-labelled background CSV using `MICROAI_XAI_GSE7390_BACKGROUND` or `MICROAI_XAI_GSE2034_BACKGROUND`; by default, the bundled `xai/backgrounds/GSE7390_background.csv` and `GSE2034_background.csv` are used. Limits: `MICROAI_XAI_BACKGROUND_SAMPLES` (50), `MICROAI_XAI_MAX_EVALS` (1,000), `MICROAI_XAI_MAX_BACKGROUND_BYTES` (64 MiB), `MICROAI_XAI_MAX_BACKGROUND_ROWS` (1,000), and `MICROAI_XAI_MAX_BACKGROUND_CELLS` (2,500,000). Global SHAP rankings and batch explanations are not exposed. Explanation readiness is blocked unless the artifact has verified full feature IDs and preprocessing metadata and the approved reference data exists.
 
 The service does not claim clinical validity. Verify model artifacts, ordered feature identifiers, training/inference preprocessing, and external evaluation before use.
+
+## Deployment (Docker / Render) and CEL preprocessing
+
+Single-patient `.CEL`/`.CEL.gz` uploads are preprocessed by `affy_mas5.R` (affy `ReadAffy` → `mas5(normalize = TRUE, sc = 600)` → `log2(exprs())`), which needs R plus the Bioconductor `affy` and `hgu133acdf` (GPL96 CDF) packages. Render's native Python runtime cannot install these, so the backend deploys as a Docker service: `backend/Dockerfile` installs R and the packages at build time (`install_r_packages.R`; any failure aborts the build) and `render.yaml` defines the service.
+
+- `RSCRIPT_PATH` (optional): explicit Rscript path; otherwise `Rscript` is resolved from `PATH`.
+- `MICROAI_RSCRIPT_TIMEOUT_SECONDS` (default 300): per-file R time limit.
+- `MICROAI_REQUIRE_R` (set to `1` in the image): startup fails if Rscript, the R packages, or the MAS5 script are missing. Startup logs print the R version and package versions; `/health` reports `cel_preprocessing_available`.
+
+Local check: `docker build -t microai-backend backend` then `docker run --rm -v /path/to/cel:/data -e MICROAI_TEST_CEL=/data/<GPL96 sample>.CEL.gz microai-backend python -m pytest`.

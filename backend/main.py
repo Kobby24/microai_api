@@ -5,6 +5,7 @@ import json
 import joblib
 import logging
 import sqlite3
+import shutil
 import subprocess
 import tempfile
 import numpy as np
@@ -232,19 +233,85 @@ MODEL_CATALOG = {
 }
 
 
+AFFY_SCRIPT_PATH = Path(__file__).resolve().parent / "affy_mas5.R"
+# R packages the MAS5 script needs at runtime. hgu133acdf is the CDF environment
+# for GPL96 (HG-U133A) arrays; without it ReadAffy/mas5 cannot map probes to probe sets.
+REQUIRED_R_PACKAGES = ("affy", "hgu133acdf")
+RSCRIPT_TIMEOUT_SECONDS = _positive_limit("MICROAI_RSCRIPT_TIMEOUT_SECONDS", 300)
+R_RUNTIME_STATUS: Dict[str, object] = {"checked": False, "available": False}
+
+
+def resolve_rscript() -> str:
+    """Locate the Rscript executable via RSCRIPT_PATH or PATH, and validate it."""
+    configured = os.getenv("RSCRIPT_PATH")
+    if configured:
+        candidate = configured if os.path.sep in configured else shutil.which(configured)
+        if not candidate or not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
+            raise RuntimeError(f"RSCRIPT_PATH is set to '{configured}', but it is not an executable file.")
+        return candidate
+    candidate = shutil.which("Rscript")
+    if not candidate:
+        raise RuntimeError(
+            "Rscript is not installed or is not available in PATH. "
+            "Install R (see backend/Dockerfile) or set RSCRIPT_PATH."
+        )
+    return candidate
+
+
+def check_r_runtime() -> Dict[str, object]:
+    """Verify Rscript, the required R packages, and the MAS5 script. Logs details; returns a summary."""
+    status: Dict[str, object] = {"checked": True, "available": False}
+    try:
+        if not AFFY_SCRIPT_PATH.is_file():
+            raise RuntimeError(f"MAS5 preprocessing script not found at {AFFY_SCRIPT_PATH}.")
+        rscript = resolve_rscript()
+        version = subprocess.run(
+            [rscript, "--version"], check=True, capture_output=True, text=True, timeout=60
+        )
+        version_line = (version.stdout or version.stderr).strip().splitlines()[0]
+        print(f"[startup] R runtime: {version_line} ({rscript})", flush=True)
+        check_expr = (
+            "pkgs <- c(%s); "
+            "missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]; "
+            "if (length(missing)) { cat(paste(missing, collapse = ',')); quit(status = 1) }; "
+            "cat(paste0(pkgs, ' ', vapply(pkgs, function(p) as.character(packageVersion(p)), ''), collapse = '; '))"
+        ) % ", ".join(f'"{pkg}"' for pkg in REQUIRED_R_PACKAGES)
+        packages = subprocess.run(
+            [rscript, "--vanilla", "-e", check_expr], capture_output=True, text=True, timeout=120
+        )
+        if packages.returncode != 0:
+            raise RuntimeError(
+                f"Missing R packages: {packages.stdout.strip() or packages.stderr.strip() or 'unknown'}"
+            )
+        print(f"[startup] R packages available: {packages.stdout.strip()}", flush=True)
+        status["available"] = True
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never crash the import path
+        print(f"[startup] ERROR: CEL preprocessing is unavailable: {exc}", flush=True)
+        status["error"] = str(exc)
+    R_RUNTIME_STATUS.clear()
+    R_RUNTIME_STATUS.update(status)
+    return status
+
+
 def run_affy_preprocessing(cel_path: str):
-    script_path = Path(__file__).resolve().parent / "affy_mas5.R"
+    script_path = AFFY_SCRIPT_PATH
     if not script_path.is_file():
         raise FileNotFoundError("The Affymetrix MAS5 preprocessing script is unavailable.")
+    rscript = resolve_rscript()
     try:
         completed = subprocess.run(
-            ["Rscript", "--vanilla", str(script_path), str(cel_path)],
+            [rscript, "--vanilla", str(script_path), str(cel_path)],
             check=True,
             capture_output=True,
             text=True,
+            timeout=RSCRIPT_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:
         raise RuntimeError("Rscript is required to preprocess Affymetrix CEL files.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Affymetrix CEL preprocessing exceeded the {RSCRIPT_TIMEOUT_SECONDS}s time limit."
+        ) from exc
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(exc.stderr.strip() or "Affymetrix CEL preprocessing failed in R.") from exc
 
@@ -590,9 +657,21 @@ async def unexpected_error_handler(_request, exc):
     return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
+@app.on_event("startup")
+def _startup_r_runtime_check():
+    status = check_r_runtime()
+    if not status["available"] and os.getenv("MICROAI_REQUIRE_R", "").lower() in {"1", "true", "yes"}:
+        # Fail the deploy loudly instead of serving a backend that cannot process CEL files.
+        raise RuntimeError(f"R runtime check failed: {status.get('error')}")
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "loaded_models": list(MODELS.keys())}
+    return {
+        "status": "ok",
+        "loaded_models": list(MODELS.keys()),
+        "cel_preprocessing_available": bool(R_RUNTIME_STATUS.get("available")),
+    }
 
 
 @app.get("/models", response_model=ModelsResponse)

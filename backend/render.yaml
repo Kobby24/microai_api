@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: microai-backend
+    runtime: docker
+    rootDir: .
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      # Fail startup if Rscript / affy / hgu133acdf are missing (also set in the image).
+      - key: MICROAI_REQUIRE_R
+        value: "1"
+      - key: MICROAI_RSCRIPT_TIMEOUT_SECONDS
+        value: "300"
