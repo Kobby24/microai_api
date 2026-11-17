@@ -484,10 +484,11 @@ def test_predict_cel_uses_remote_service(client, fake_model, monkeypatch):
     assert seen == {"url": "https://cel.example/preprocess", "token": "secret", "body": b"fake cel contents"}
 
 
-def test_predict_cel_remote_busy_returns_503(client, fake_model, monkeypatch):
+@pytest.mark.parametrize("upstream_status", [502, 503, 504])
+def test_predict_cel_remote_busy_returns_503(client, fake_model, monkeypatch, upstream_status):
     import httpx
 
-    _use_remote_cel_service(monkeypatch, lambda *_: httpx.Response(503, json={"detail": "busy"}))
+    _use_remote_cel_service(monkeypatch, lambda *_: httpx.Response(upstream_status, text=""))
     response = _post_cel(client)
 
     assert response.status_code == 503
