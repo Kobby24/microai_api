@@ -259,7 +259,12 @@ def _run_affy_preprocessing_remote(cel_path: str):
     except httpx.HTTPError as exc:
         raise RuntimeError(f"CEL preprocessing service is unreachable: {exc}") from exc
 
-    if response.status_code == 503:
+    if response.status_code in (502, 503, 504):
+        # 503 = our "busy" response; 502/504 = Render's proxy could not reach a healthy
+        # preprocessor instance (sleeping, deploying, or restarted after a crash).
+        logger.warning(
+            "CEL preprocessing service unavailable: HTTP %s %s", response.status_code, response.text[:200]
+        )
         raise HTTPException(
             status_code=503,
             detail="The CEL preprocessor is busy or starting up. Please retry in a minute.",
