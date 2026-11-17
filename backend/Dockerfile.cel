@@ -1,0 +1,40 @@
+# MicroAI CEL preprocessing service: R/Bioconductor (affy MAS5) behind a tiny FastAPI app.
+# Runs as its own Render service so the R memory peak gets its own 512 MB.
+# Build context: backend/   (docker build -f Dockerfile.cel -t microai-cel backend)
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    MALLOC_ARENA_MAX=2
+
+# --- R runtime + Bioconductor affy -------------------------------------------
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        r-base-core \
+        r-bioc-affy \
+        r-bioc-biobase \
+        r-bioc-biocgenerics \
+        r-bioc-preprocesscore \
+        r-bioc-annotationdbi \
+        r-cran-biocmanager \
+        ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# hgu133acdf = CDF environment for GPL96 / HG-U133A (required by ReadAffy + mas5).
+COPY install_r_packages.R /tmp/install_r_packages.R
+RUN Rscript --vanilla /tmp/install_r_packages.R && rm /tmp/install_r_packages.R
+
+WORKDIR /app
+COPY requirements-cel.txt .
+RUN pip install --no-cache-dir -r requirements-cel.txt
+
+COPY cel_service.py r_runtime.py affy_mas5.R ./
+
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser /app
+USER appuser
+
+ENV PORT=10000
+EXPOSE 10000
+CMD ["sh", "-c", "exec uvicorn cel_service:app --host 0.0.0.0 --port ${PORT:-10000}"]

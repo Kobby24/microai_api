@@ -22,10 +22,14 @@ cel_data <- ReadAffy(filenames = cel_path, compress = TRUE)
 processed <- mas5(cel_data, normalize = TRUE, sc = 600)
 log_expression <- log2(exprs(processed))
 
-sink()
-
 feature_ids <- rownames(log_expression)
 values <- as.numeric(log_expression[, 1])
+
+# Release the AffyBatch / ExpressionSet before building the JSON to lower peak memory.
+rm(cel_data, processed, log_expression)
+invisible(gc())
+
+sink()
 
 escaped_ids <- vapply(feature_ids, function(id) {
   gsub('"', '\\"', id)
