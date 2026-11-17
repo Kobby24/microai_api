@@ -18,6 +18,21 @@ sink(stderr())
 
 library(affy)
 
+# Memory: register the pre-exported HG-U133A probe map (see install_r_packages.R)
+# in .GlobalEnv under the array's CDF name. affy's default lookup checks the global
+# environment before attaching the hgu133acdf package, so AnnotationDbi never loads
+# (~310 MB peak instead of ~600 MB). Other array types fall back to package lookup.
+cdf_rds <- Sys.getenv("MICROAI_CDF_RDS", "/usr/local/share/microai/hgu133acdf.rds")
+if (file.exists(cdf_rds)) {
+  assign(
+    "HG-U133A",
+    list2env(readRDS(cdf_rds), envir = new.env(hash = TRUE, size = 30000L)),
+    envir = .GlobalEnv
+  )
+} else {
+  message("MAS5: ", cdf_rds, " not found; falling back to the hgu133acdf package (higher memory).")
+}
+
 cel_data <- ReadAffy(filenames = cel_path, compress = TRUE)
 processed <- mas5(cel_data, normalize = TRUE, sc = 600)
 log_expression <- log2(exprs(processed))
