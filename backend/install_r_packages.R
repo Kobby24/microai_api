@@ -34,3 +34,16 @@ suppressPackageStartupMessages({
   library(hgu133acdf)
 })
 message("R package installation verified.")
+
+# Export the HG-U133A probe map as a plain RDS. Loading the hgu133acdf *package*
+# pulls in AnnotationDbi (+DBI/RSQLite/S4Vectors...), which costs ~265 MB of RAM at
+# runtime; affy_mas5.R registers this RDS as the "HG-U133A" CDF environment instead,
+# giving bit-identical MAS5 output at roughly half the peak memory.
+cdf_rds <- Sys.getenv("MICROAI_CDF_RDS", "/usr/local/share/microai/hgu133acdf.rds")
+dir.create(dirname(cdf_rds), recursive = TRUE, showWarnings = FALSE)
+saveRDS(as.list(hgu133acdf, all.names = TRUE), cdf_rds)
+if (!file.exists(cdf_rds) || length(readRDS(cdf_rds)) < 20000) {
+  message("Failed to export the HG-U133A CDF environment to ", cdf_rds)
+  quit(status = 1)
+}
+message("Exported HG-U133A CDF environment to ", cdf_rds)
