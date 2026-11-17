@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+import r_runtime
 from main import MODELS, app
 
 GPL96_PROBE_SET_COUNT = 22283
@@ -52,28 +53,28 @@ def test_resolve_rscript_rejects_non_executable_env_path(tmp_path, monkeypatch):
 
 def test_resolve_rscript_reports_missing_executable(monkeypatch):
     monkeypatch.delenv("RSCRIPT_PATH", raising=False)
-    monkeypatch.setattr(main.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(r_runtime.shutil, "which", lambda _name: None)
     with pytest.raises(RuntimeError, match="not installed or is not available in PATH"):
         main.resolve_rscript()
 
 
 def test_run_affy_preprocessing_reports_timeout(monkeypatch, tmp_path):
-    monkeypatch.setattr(main, "resolve_rscript", lambda: "/usr/bin/Rscript")
+    monkeypatch.setattr(r_runtime, "resolve_rscript", lambda: "/usr/bin/Rscript")
 
     def fake_run(args, **kwargs):
-        assert kwargs["timeout"] == main.RSCRIPT_TIMEOUT_SECONDS
+        assert kwargs["timeout"] == r_runtime.RSCRIPT_TIMEOUT_SECONDS
         assert args[0] == "/usr/bin/Rscript"
         raise subprocess.TimeoutExpired(args, kwargs["timeout"])
 
-    monkeypatch.setattr(main.subprocess, "run", fake_run)
+    monkeypatch.setattr(r_runtime.subprocess, "run", fake_run)
     with pytest.raises(RuntimeError, match="time limit"):
-        main.run_affy_preprocessing(str(tmp_path / "x.CEL"))
+        r_runtime.run_affy_preprocessing_local(str(tmp_path / "x.CEL"))
 
 
 def test_check_r_runtime_reports_missing_rscript(monkeypatch):
     monkeypatch.delenv("RSCRIPT_PATH", raising=False)
-    monkeypatch.setattr(main.shutil, "which", lambda _name: None)
-    status = main.check_r_runtime()
+    monkeypatch.setattr(r_runtime.shutil, "which", lambda _name: None)
+    status = r_runtime.check_r_runtime()
     assert status["available"] is False
     assert "Rscript" in status["error"]
 
@@ -103,7 +104,7 @@ def test_affy_and_cdf_packages_load():
 
 @requires_r
 def test_startup_runtime_check_passes():
-    status = main.check_r_runtime()
+    status = r_runtime.check_r_runtime()
     assert status == {"checked": True, "available": True}
 
 

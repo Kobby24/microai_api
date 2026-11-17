@@ -1,4 +1,6 @@
 services:
+  # Main API (Python ML models). No R here: CEL files are forwarded to the
+  # preprocessor below so the R/affy memory peak never shares this 512 MB container.
   - type: web
     name: microai-backend
     runtime: docker
@@ -7,8 +9,28 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
-      # Fail startup if Rscript / affy / hgu133acdf are missing (also set in the image).
-      - key: MICROAI_REQUIRE_R
-        value: "1"
+      # Public URL of the CEL preprocessor (set in the dashboard after it is created),
+      # e.g. https://microai-cel-preprocessor.onrender.com
+      - key: MICROAI_CEL_SERVICE_URL
+        sync: false
+      - key: MICROAI_CEL_SERVICE_TOKEN
+        fromService:
+          type: web
+          name: microai-cel-preprocessor
+          envVarKey: MICROAI_CEL_SERVICE_TOKEN
+      - key: MICROAI_RSCRIPT_TIMEOUT_SECONDS
+        value: "300"
+
+  # R/Bioconductor affy MAS5 preprocessing for Affymetrix CEL files.
+  - type: web
+    name: microai-cel-preprocessor
+    runtime: docker
+    rootDir: .
+    dockerfilePath: ./Dockerfile.cel
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: MICROAI_CEL_SERVICE_TOKEN
+        generateValue: true
       - key: MICROAI_RSCRIPT_TIMEOUT_SECONDS
         value: "300"

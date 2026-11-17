@@ -90,6 +90,8 @@ export async function predictCel(modelName, file) {
   const { data } = await client.post(
     `/predict_cel/${encodeURIComponent(modelName)}`,
     form,
+    // MAS5 runs in a separate R service that may need to cold-start first.
+    { timeout: 360000 },
   )
   return data
 }

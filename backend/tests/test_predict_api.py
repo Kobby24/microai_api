@@ -428,3 +428,91 @@ def test_predict_cel_rejects_invalid_gzip_and_missing_feature_ids(client, fake_m
     )
     assert invalid_ids.status_code == 400
     assert "match this model's required gene/probe set" in invalid_ids.json()["detail"]
+
+
+class _FakeHttpxClient:
+    """Minimal stand-in for httpx.Client used by main._run_affy_preprocessing_remote."""
+
+    def __init__(self, handler):
+        self._handler = handler
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def post(self, url, files=None, headers=None):
+        return self._handler(url, files, headers)
+
+
+def _use_remote_cel_service(monkeypatch, handler):
+    import httpx
+
+    monkeypatch.setattr(main, "CEL_SERVICE_URL", "https://cel.example")
+    monkeypatch.setattr(main, "CEL_SERVICE_TOKEN", "secret")
+    monkeypatch.setattr(httpx, "Client", _FakeHttpxClient(handler))
+
+
+def _post_cel(client):
+    return client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL", b"fake cel contents", "application/octet-stream")},
+    )
+
+
+def test_predict_cel_uses_remote_service(client, fake_model, monkeypatch):
+    import httpx
+
+    seen = {}
+
+    def handler(url, files, headers):
+        seen["url"] = url
+        seen["token"] = headers["X-CEL-Service-Token"]
+        seen["body"] = files["file"][1].read()
+        return httpx.Response(200, json={"feature_ids": ["g1", "g2", "g3"], "values": [1.0, 2.0, 3.0]})
+
+    _use_remote_cel_service(monkeypatch, handler)
+    response = _post_cel(client)
+
+    assert response.status_code == 200
+    assert response.json()["prediction"] == "1"
+    assert response.json()["expression"] == [1.0, 2.0, 3.0]
+    assert seen == {"url": "https://cel.example/preprocess", "token": "secret", "body": b"fake cel contents"}
+
+
+def test_predict_cel_remote_busy_returns_503(client, fake_model, monkeypatch):
+    import httpx
+
+    _use_remote_cel_service(monkeypatch, lambda *_: httpx.Response(503, json={"detail": "busy"}))
+    response = _post_cel(client)
+
+    assert response.status_code == 503
+    assert "retry" in response.json()["detail"].lower()
+
+
+def test_predict_cel_remote_unreachable_returns_500(client, fake_model, monkeypatch):
+    import httpx
+
+    def handler(*_):
+        raise httpx.ConnectError("connection refused")
+
+    _use_remote_cel_service(monkeypatch, handler)
+    response = _post_cel(client)
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "CEL preprocessing failed."}
+
+
+def test_predict_cel_remote_malformed_payload_returns_500(client, fake_model, monkeypatch):
+    import httpx
+
+    _use_remote_cel_service(
+        monkeypatch, lambda *_: httpx.Response(200, json={"feature_ids": ["g1"], "values": [1.0, 2.0]})
+    )
+    response = _post_cel(client)
+
+    assert response.status_code == 500
