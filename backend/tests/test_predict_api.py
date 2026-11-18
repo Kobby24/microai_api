@@ -517,3 +517,28 @@ def test_predict_cel_remote_malformed_payload_returns_500(client, fake_model, mo
     response = _post_cel(client)
 
     assert response.status_code == 500
+
+
+def test_predict_cel_returns_expression_aligned_with_feature_ids(client, fake_model, monkeypatch):
+    # R sorts probe IDs differently from the model schema. The returned vector is what the
+    # frontend sends to /explain, so each value must sit next to its own feature ID.
+    monkeypatch.setattr(
+        main,
+        "run_affy_preprocessing",
+        lambda _path: ({"g3": 3.0, "g1": 1.0, "g2": 2.0}, [3.0, 1.0, 2.0]),
+    )
+
+    prediction = _post_cel(client)
+
+    assert prediction.status_code == 200
+    body = prediction.json()
+    assert body["feature_ids"] == FEATURE_IDS
+    assert body["expression"] == [1.0, 2.0, 3.0]
+
+    replay = client.post(
+        "/predict/gse7390",
+        json={"expression": body["expression"], "feature_ids": body["feature_ids"]},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["prediction"] == body["prediction"]
+    assert replay.json()["class_probabilities"] == body["class_probabilities"]
