@@ -1019,7 +1019,7 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
 
     try:
         try:
-            feature_map, ordered_values = await run_in_threadpool(run_affy_preprocessing, tmp_path)
+            feature_map, _ = await run_in_threadpool(run_affy_preprocessing, tmp_path)
         except HTTPException:
             raise
         except Exception as exc:
@@ -1054,7 +1054,9 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
         probability=float(np.max(probability_vector)),
         class_probabilities={key: float(value) for key, value in zip(class_keys, probability_vector)},
         sample_id=None,
-        expression=[float(value) for value in ordered_values],
+        # Same vector the model just scored, aligned with feature_ids. R sorts probes
+        # differently, and the frontend sends this back to /explain unchanged.
+        expression=ordered.tolist(),
         feature_ids=list(expected_ids),
     )
     return payload.model_dump(exclude_none=False)

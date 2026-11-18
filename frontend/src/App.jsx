@@ -210,11 +210,12 @@ export default function App() {
       }
       setLoading(true)
       const result = await predictCel(selectedModel, celFile)
-      setJsonResult(result)
+      const patientId = result.sample_id || sampleId.trim()
+      setJsonResult({ ...result, sample_id: patientId || null })
       setJsonRequest({
         expression: result.expression,
         featureIds: result.feature_ids,
-        sampleId: result.sample_id || sampleId.trim(),
+        sampleId: patientId,
       })
       return true
     } catch (err) {
