@@ -14,6 +14,7 @@ import { batchSamplePayload, parseBatchExpressionText } from './batchFile'
 import { parseExpressionInput } from './expressionInput'
 import { canStartExplanation, explanationReducer, initialExplanationState } from './explanationState'
 import { isExplanationForPrediction } from './xaiPresentation'
+import { initialAnalysisProgress, progressFromUploadEvent, uploadPercent } from './analysisProgress'
 
 export default function App() {
   const [models, setModels] = useState([])
@@ -27,6 +28,7 @@ export default function App() {
   const [csvFile, setCsvFile] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [analysisProgress, setAnalysisProgress] = useState(initialAnalysisProgress)
   const [error, setError] = useState('')
   const [workflowStep, setWorkflowStep] = useState('start')
   const [pendingMode, setPendingMode] = useState(null)
@@ -100,6 +102,20 @@ export default function App() {
     }
   }
 
+  function startAnalysisProgress() {
+    setAnalysisProgress(initialAnalysisProgress)
+    setLoading(true)
+  }
+
+  function handleUploadProgress(event) {
+    const next = progressFromUploadEvent(event)
+    // Upload events can fire every few milliseconds; re-render only when the shown
+    // whole-percent value or the phase changes.
+    setAnalysisProgress((previous) => (
+      previous.phase === next.phase && uploadPercent(previous) === uploadPercent(next) ? previous : next
+    ))
+  }
+
   function resetExplanation() {
     explanationRequestId.current += 1
     explanationAbortController.current?.abort()
@@ -163,8 +179,8 @@ export default function App() {
         throw new Error(selectedMeta?.readiness_reason || 'This model is not ready for predictions.')
       }
       const input = parseExpressionInput(jsonInput, selectedMeta.feature_ids)
-      setLoading(true)
-      const result = await predictJson(selectedModel, input.expression, input.featureIds, sampleId)
+      startAnalysisProgress()
+      const result = await predictJson(selectedModel, input.expression, input.featureIds, sampleId, handleUploadProgress)
       setJsonResult(result)
       setJsonRequest({ ...input, sampleId: sampleId.trim() })
       return true
@@ -208,8 +224,8 @@ export default function App() {
       if (!celFile) {
         throw new Error('Select a .CEL or .CEL.gz file first.')
       }
-      setLoading(true)
-      const result = await predictCel(selectedModel, celFile)
+      startAnalysisProgress()
+      const result = await predictCel(selectedModel, celFile, handleUploadProgress)
       const patientId = result.sample_id || sampleId.trim()
       setJsonResult({ ...result, sample_id: patientId || null })
       setJsonRequest({
@@ -243,8 +259,8 @@ export default function App() {
         throw new Error('Select a CSV or TSV file first.')
       }
       batchSourceRef.current = null
-      setLoading(true)
-      const result = await predictCsv(selectedModel, csvFile)
+      startAnalysisProgress()
+      const result = await predictCsv(selectedModel, csvFile, handleUploadProgress)
       setCsvResult(result)
       return true
     } catch (err) {
@@ -661,7 +677,7 @@ export default function App() {
         )}
       </main>
       {reviewOpen && <AnalysisReviewDialog model={selectedMeta} mode={pendingMode} file={pendingMode === 'cel' ? celFile : csvFile} sampleId={sampleId} onCancel={handleBackToInput} onConfirm={handleRunAnalysis} />}
-      {loading && <AnalysisLoadingOverlay mode={pendingMode} />}
+      {loading && <AnalysisLoadingOverlay mode={pendingMode} progress={analysisProgress} />}
     </div>
   )
 }

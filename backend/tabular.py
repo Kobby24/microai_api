@@ -62,7 +62,25 @@ def _validate_feature_ids(values, expected_feature_ids):
 
 
 def _numeric_values(values):
-    numeric = values.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    # The original conversion is pd.to_numeric per column: 22k calls for a GPL96 table and
+    # the dominant parsing cost. Text (object) columns are instead converted with one call
+    # over all their cells. Per-column conversion can take pandas' integer path (every cell
+    # integer-like), which differs from float parsing only for zeros ("-0" -> +0.0) and
+    # integers beyond 2**53; any column containing either, and every non-text column, is
+    # converted with the original per-column call, so the result is bit-identical.
+    numeric = np.empty(values.shape, dtype=float)
+    is_text = np.fromiter((dtype == object for dtype in values.dtypes), dtype=bool, count=values.shape[1])
+    exact_columns = np.flatnonzero(~is_text)
+    text_columns = np.flatnonzero(is_text)
+    if text_columns.size:
+        cells = values.iloc[:, text_columns].to_numpy(dtype=object)
+        converted = np.asarray(pd.to_numeric(cells.ravel(), errors="coerce"), dtype=float).reshape(cells.shape)
+        with np.errstate(invalid="ignore"):
+            needs_exact = ((converted == 0) | (np.abs(converted) >= 2.0 ** 53)).any(axis=0)
+        numeric[:, text_columns] = converted
+        exact_columns = np.concatenate((exact_columns, text_columns[needs_exact]))
+    for column in exact_columns:
+        numeric[:, column] = pd.to_numeric(values.iloc[:, column], errors="coerce").to_numpy(dtype=float)
     if not np.isfinite(numeric).all():
         raise ValueError(
             "Expression values must be numeric and finite; missing, NaN, and infinite values are not supported."
@@ -99,7 +117,7 @@ def prepare_expression_matrix(
     if df.empty:
         raise ValueError("The expression table is empty.")
 
-    work = df.copy()
+    work = df  # read-only below; copying a 22k-column object frame is pure overhead
     header = _labels(work.iloc[0])
 
     # Sample rows require a header containing every feature identifier.

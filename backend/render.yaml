@@ -1,18 +1,36 @@
+# Render Blueprint for the MicroAI backend (two Docker web services).
+#
+# This file lives in backend/, not the repository root: when creating or syncing the
+# Blueprint, set the dashboard's "Blueprint Path" field to backend/render.yaml.
+#
+# rootDir is deliberately omitted so the service root is the repository root. Render's
+# Blueprint schema documents dockerfilePath/dockerContext as relative to the repo root,
+# while its monorepo guide describes them as relative to rootDir; with no rootDir both
+# readings resolve the paths below identically. buildFilter keeps auto-deploys limited
+# to backend changes, as a backend root directory would.
 services:
-  # Main API (Python ML models). No R here: CEL files are forwarded to the
-  # preprocessor below so the R/affy memory peak never shares this 512 MB container.
+  # Main API (Python ML models + SHAP). No R here: CEL files are forwarded to the
+  # preprocessor below. Measured need: ~340 MiB resident after the SHAP warm-up, ~410 MiB
+  # in normal use and 650 MiB+ while parsing a large CSV/TSV batch, so it needs the
+  # 2 GB instance (Render "Standard", 1 CPU / 2 GB). 512 MB instances were OOM-killed.
   - type: web
     name: microai-backend
     runtime: docker
-    rootDir: .
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    plan: 1c-2g
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    buildFilter:
+      paths:
+        - backend/**
     healthCheckPath: /health
     envVars:
-      # Public URL of the CEL preprocessor (set in the dashboard after it is created),
-      # e.g. https://microai-cel-preprocessor.onrender.com
+      # Required. Base URL of the CEL preprocessor service with no trailing path, e.g.
+      # its public https://<name>.onrender.com URL from that service's dashboard page.
+      # sync: false values are only prompted when the Blueprint is first created; on an
+      # existing Blueprint, set this in the API service's Environment tab.
       - key: MICROAI_CEL_SERVICE_URL
         sync: false
+      # Shared secret, copied from the CEL service's generated value.
       - key: MICROAI_CEL_SERVICE_TOKEN
         fromService:
           type: web
@@ -20,14 +38,27 @@ services:
           envVarKey: MICROAI_CEL_SERVICE_TOKEN
       - key: MICROAI_RSCRIPT_TIMEOUT_SECONDS
         value: "300"
+      # MICROAI_XAI_WARMUP is intentionally unset: the default ("startup") prepares the
+      # SHAP explainers before the service accepts traffic (~17 s boot at 1 CPU).
 
-  # R/Bioconductor affy MAS5 preprocessing for Affymetrix CEL files.
+  # R/Bioconductor affy MAS5 preprocessing for Affymetrix CEL files. Runs one MAS5 job at
+  # a time in a single uvicorn process (Dockerfile.cel CMD, no --workers); measured with
+  # no OOM kills in 512 MB (Render "Starter", 0.5 CPU / 512 MB). Do not add workers:
+  # each worker would run its own R job in the same 512 MB container.
   - type: web
     name: microai-cel-preprocessor
     runtime: docker
-    rootDir: .
-    dockerfilePath: ./Dockerfile.cel
-    dockerContext: .
+    plan: 0.5c-512mb
+    dockerfilePath: ./backend/Dockerfile.cel
+    dockerContext: ./backend
+    buildFilter:
+      paths:
+        - backend/Dockerfile.cel
+        - backend/requirements-cel.txt
+        - backend/install_r_packages.R
+        - backend/cel_service.py
+        - backend/r_runtime.py
+        - backend/affy_mas5.R
     healthCheckPath: /health
     envVars:
       - key: MICROAI_CEL_SERVICE_TOKEN

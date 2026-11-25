@@ -50,12 +50,12 @@ export async function fetchModels() {
   return Array.isArray(data?.models) ? data.models : []
 }
 
-export async function predictJson(modelName, expression, featureIds, sampleId) {
+export async function predictJson(modelName, expression, featureIds, sampleId, onUploadProgress) {
   const { data } = await client.post(`/predict/${encodeURIComponent(modelName)}`, {
     expression,
     feature_ids: featureIds,
     ...(sampleId?.trim() ? { sample_id: sampleId.trim() } : {}),
-  })
+  }, { onUploadProgress })
   return data
 }
 
@@ -74,24 +74,25 @@ export async function fetchGlobalDrivers(modelName) {
   return data
 }
 
-export async function predictCsv(modelName, file) {
+export async function predictCsv(modelName, file, onUploadProgress) {
   const form = new FormData()
   form.append('file', file)
   const { data } = await client.post(
     `/predict_csv/${encodeURIComponent(modelName)}`,
     form,
+    { onUploadProgress },
   )
   return data
 }
 
-export async function predictCel(modelName, file) {
+export async function predictCel(modelName, file, onUploadProgress) {
   const form = new FormData()
   form.append('file', file)
   const { data } = await client.post(
     `/predict_cel/${encodeURIComponent(modelName)}`,
     form,
     // MAS5 runs in a separate R service that may need to cold-start first.
-    { timeout: 360000 },
+    { timeout: 360000, onUploadProgress },
   )
   return data
 }

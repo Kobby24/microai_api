@@ -38,8 +38,18 @@ class XAIService:
         self.max_background_rows = _positive_setting("MICROAI_XAI_MAX_BACKGROUND_ROWS", 1000)
         self.max_background_cells = _positive_setting("MICROAI_XAI_MAX_BACKGROUND_CELLS", 2_500_000)
         self.additivity_tolerance = 0.01
+        # Explainers are keyed by (model, background file, selected features, target class).
+        # Two models x two classes need four entries; a smaller cache evicts and rebuilds
+        # (~1 s each) when users alternate between models or explained classes.
+        self.explainer_cache_size = _positive_setting("MICROAI_XAI_EXPLAINER_CACHE_SIZE", 8)
         self._cache = {}
         self._cache_lock = RLock()
+        # Model-space background (masker data) is identical for every target class of a
+        # model, so it is prepared once per model/background file instead of per class.
+        self._background_cache = {}
+        # Serializes explainer construction so concurrent first requests (or the startup
+        # warm-up) build each explainer once instead of racing to build duplicates.
+        self._build_lock = RLock()
 
     def _background_path(self, model_name):
         configured = self.background_paths.get(model_name)
@@ -130,8 +140,32 @@ class XAIService:
             if cached is not None:
                 return cached[0], selected_ids, cached[1], cached[2]
 
-        background_raw = self._load_background(path, feature_ids)
+        with self._build_lock:
+            with self._cache_lock:
+                cached = self._cache.get(cache_key)
+                if cached is not None:
+                    return cached[0], selected_ids, cached[1], cached[2]
+            masker_data = self._masker_data(model_name, model, feature_ids, path, stat, selected_ids)
+            return self._build_explainer(cache_key, model, masker_data, selected_ids, target_index)
+
+    def _masker_data(self, model_name, model, feature_ids, path, stat, selected_ids, background_raw=None):
+        background_key = (
+            model_name,
+            id(model),
+            str(path.resolve()),
+            stat.st_mtime_ns,
+            stat.st_size,
+            tuple(selected_ids),
+            self.background_samples,
+        )
+        with self._cache_lock:
+            cached = self._background_cache.get(background_key)
+        if cached is not None:
+            return cached
+        if background_raw is None:
+            background_raw = self._load_background(path, feature_ids)
         background_model_space = self._model_space(model, background_raw)
+        del background_raw
         rng = np.random.default_rng(0)
         sample_indices = rng.choice(
             len(background_model_space),
@@ -139,6 +173,15 @@ class XAIService:
             replace=False,
         )
         masker_data = background_model_space[sample_indices]
+        masker_data.setflags(write=False)
+        with self._cache_lock:
+            # Drop stale entries for this model (e.g. the background file changed on disk).
+            for key in [key for key in self._background_cache if key[:2] == background_key[:2]]:
+                self._background_cache.pop(key)
+            self._background_cache[background_key] = masker_data
+        return masker_data
+
+    def _build_explainer(self, cache_key, model, masker_data, selected_ids, target_index):
         shap = self._get_shap()
 
         def calibrated_probability(model_space):
@@ -167,10 +210,34 @@ class XAIService:
             finally:
                 np.random.set_state(random_state)
         with self._cache_lock:
-            if len(self._cache) >= 2:
+            while len(self._cache) >= self.explainer_cache_size:
                 self._cache.pop(next(iter(self._cache)))
             self._cache[cache_key] = (explainer, len(masker_data), explainer_random_state)
         return explainer, selected_ids, len(masker_data), explainer_random_state
+
+    def warm_up(self, model_name, model, feature_ids, class_count, run_explanation=True):
+        """Prepare explainers for every class of a model and run one throw-away explanation.
+
+        The first SHAP call in a process pays one-time costs (shap import, numba JIT,
+        background preprocessing) of several seconds. Warming moves that off the first
+        user's request. Nothing patient-specific is cached: the throw-away explanation
+        uses a row of the approved background dataset and its result is discarded.
+        """
+        path, stat = self._background_path(model_name)
+        expected_feature_ids = list(feature_ids)
+        background_raw = self._load_background(path, expected_feature_ids)
+        sample = background_raw[:1].copy()
+        selected_ids = [expected_feature_ids[index] for index in np.asarray(model.selected_genes, dtype=int)]
+        # Prime the per-model background cache from the copy already in memory.
+        self._masker_data(model_name, model, expected_feature_ids, path, stat, selected_ids, background_raw)
+        del background_raw
+        for target_index in range(int(class_count)):
+            self._get_explainer(model_name, model, expected_feature_ids, target_index, path, stat)
+        if not run_explanation:
+            return
+        model_space = self._model_space(model, sample)
+        probability = float(np.asarray(model.ensemble.predict_proba(model_space), dtype=float)[0, 0])
+        self.explain_local(model_name, model, sample, expected_feature_ids, 0, probability)
 
     def explain_local(
         self,

@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -5,6 +6,9 @@ from types import SimpleNamespace
 import joblib
 
 import pytest
+
+# API tests use stub models; never start the background SHAP warm-up thread.
+os.environ.setdefault("MICROAI_XAI_WARMUP", "0")
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:

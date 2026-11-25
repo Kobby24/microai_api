@@ -1,15 +1,19 @@
 import csv
+import gc
 import gzip
 import io
 import joblib
 import logging
 import sqlite3
 import tempfile
+import threading
+import time
 import numpy as np
 import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
@@ -184,6 +188,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# /models (~620 KB of probe IDs), /predict_cel (~710 KB expression vector) and /explain
+# (~140 KB) are highly compressible JSON: gzip cuts them by 66-86%. Level 6 gives the same
+# size as the default level 9 at about half the CPU time.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 setattr(__main__, "MICROAI", MICROAI)
 setattr(__main__, "QuantileNormalizer", QuantileNormalizer)
@@ -607,6 +616,56 @@ async def unexpected_error_handler(_request, exc):
     return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
+def _warm_up_explainers() -> None:
+    """Prepare SHAP explainers for every ready model."""
+    explanation_run = False
+    for name, model in list(MODELS.items()):
+        if _model_readiness_issue(name, model) is not None:
+            continue
+        started = time.perf_counter()
+        try:
+            XAI_SERVICE.warm_up(
+                name,
+                model,
+                _feature_ids(model),
+                len(_model_classes(model)),
+                # SHAP's one-time import/JIT cost is per process, not per model.
+                run_explanation=not explanation_run,
+            )
+            explanation_run = True
+        except Exception:  # noqa: BLE001 - warm-up is an optimization; requests still build lazily
+            logger.exception("SHAP explainer warm-up failed for %s", name)
+            continue
+        print(f"[startup] SHAP explainers ready for {name} in {time.perf_counter() - started:.1f}s", flush=True)
+
+
+def _warm_up_explainers_in_background() -> None:
+    try:
+        # Linux applies niceness per thread; give live requests the CPU first.
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 10)
+    except (AttributeError, OSError):
+        pass
+    _warm_up_explainers()
+
+
+@app.on_event("startup")
+def _startup_explainer_warm_up():
+    # The first SHAP explanation in a process costs ~8 s instead of ~1 s (shap import,
+    # numba JIT, background preprocessing). MICROAI_XAI_WARMUP selects who pays for it:
+    #   "startup" (default): before the server accepts traffic (~10 s longer boot measured). With
+    #       health-checked deploys no user request ever waits for it.
+    #   "background": in a thread after boot. Faster boot, but the warm-up holds the GIL
+    #       in long C calls and measurably slows requests that arrive meanwhile.
+    #   "0"/"off": lazily, on the first explanation request.
+    mode = os.getenv("MICROAI_XAI_WARMUP", "startup").strip().lower()
+    if mode in {"0", "false", "no", "off"}:
+        return
+    if mode == "background":
+        threading.Thread(target=_warm_up_explainers_in_background, name="xai-warm-up", daemon=True).start()
+        return
+    _warm_up_explainers()
+
+
 @app.on_event("startup")
 def _startup_r_runtime_check():
     if CEL_SERVICE_URL:
@@ -961,6 +1020,80 @@ def predict_json(model_name: str, request: PredictionRequest):
     )
 
 
+_GZIP_CHUNK_BYTES = 1024 * 1024
+
+
+def _validate_gzip_cel(buffer: bytes) -> None:
+    """Check gzip integrity and the decompressed-size limit without keeping the output.
+
+    Decompresses in fixed-size chunks and discards them: the same integrity (CRC/length)
+    checks as a full read, but without holding the ~12 MB decompressed CEL in memory.
+    R reads the original .CEL.gz directly (ReadAffy(compress = TRUE)), so the
+    decompressed bytes are never needed here.
+    """
+    total = 0
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(buffer), mode="rb") as compressed_file:
+            while True:
+                chunk = compressed_file.read(_GZIP_CHUNK_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413, detail="The decompressed CEL file exceeds the configured size limit."
+                    )
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
+    except Exception as exc:
+        logger.exception("Unable to validate uploaded CEL file")
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
+
+
+def _process_cel_upload(model_name, model, expected_ids, buffer: bytes, is_compressed: bool):
+    if is_compressed:
+        _validate_gzip_cel(buffer)
+
+    # The original upload is handed to R as-is: affy's ReadAffy reads gzip natively and
+    # produces byte-identical MAS5 output, so no decompressed copy is written or sent.
+    with tempfile.NamedTemporaryFile(suffix=".CEL.gz" if is_compressed else ".CEL", delete=False) as tmp:
+        tmp.write(buffer)
+        tmp_path = tmp.name
+
+    try:
+        try:
+            feature_map, _ = run_affy_preprocessing(tmp_path)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("CEL preprocessing failed for %s", model_name)
+            raise HTTPException(status_code=500, detail="CEL preprocessing failed.") from exc
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    missing = [feature_id for feature_id in expected_ids if feature_id not in feature_map]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="Feature identifiers do not match this model's required gene/probe set.",
+        )
+
+    ordered = np.asarray([feature_map[feature_id] for feature_id in expected_ids], dtype=float)
+    if not np.isfinite(ordered).all():
+        raise HTTPException(
+            status_code=400,
+            detail="CEL-derived expression values must be numeric and finite.",
+        )
+
+    predictions, probabilities, class_keys = _checked_predictions(model, ordered.reshape(1, -1))
+    return ordered, predictions, probabilities, class_keys
+
+
 class CelPredictionResponse(PredictionResponse):
     expression: List[float]
     feature_ids: List[str]
@@ -995,59 +1128,14 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
             detail="Predictions are unavailable because this model has no verified gene/probe schema.",
         )
 
-    try:
-        buffer = await file.read(MAX_UPLOAD_BYTES + 1)
-        if len(buffer) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
-        cel_contents = buffer
-        if is_compressed:
-            with gzip.GzipFile(fileobj=io.BytesIO(buffer), mode="rb") as compressed_file:
-                cel_contents = compressed_file.read(MAX_UPLOAD_BYTES + 1)
-            if len(cel_contents) > MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="The decompressed CEL file exceeds the configured size limit.")
-    except HTTPException:
-        raise
-    except OSError as exc:
-        raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
-    except Exception as exc:
-        logger.exception("Unable to validate uploaded CEL file")
-        raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
-
-    with tempfile.NamedTemporaryFile(suffix=".CEL", delete=False) as tmp:
-        tmp.write(cel_contents)
-        tmp_path = tmp.name
-
-    try:
-        try:
-            feature_map, _ = await run_in_threadpool(run_affy_preprocessing, tmp_path)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.exception("CEL preprocessing failed for %s", model_name)
-            raise HTTPException(status_code=500, detail="CEL preprocessing failed.") from exc
-
-        missing = [feature_id for feature_id in expected_ids if feature_id not in feature_map]
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail="Feature identifiers do not match this model's required gene/probe set.",
-            )
-
-        ordered = np.asarray([feature_map[feature_id] for feature_id in expected_ids], dtype=float)
-        if not np.isfinite(ordered).all():
-            raise HTTPException(
-                status_code=400,
-                detail="CEL-derived expression values must be numeric and finite.",
-            )
-
-        X = ordered.reshape(1, -1)
-        predictions, probabilities, class_keys = _checked_predictions(model, X)
-    finally:
-        try:
-            Path(tmp_path).unlink(missing_ok=True)
-        except OSError:
-            pass
-
+    buffer = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(buffer) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
+    # CPU-bound work (gzip check, MAS5 round trip, model scoring) runs in the threadpool
+    # so it never stalls the event loop that serves other requests.
+    ordered, predictions, probabilities, class_keys = await run_in_threadpool(
+        _process_cel_upload, model_name, model, expected_ids, buffer, is_compressed
+    )
     probability_vector = probabilities[0]
     payload = CelPredictionResponse(
         prediction=_normalize_class_label(predictions[0]),
@@ -1132,10 +1220,54 @@ async def predict_csv(model_name: str, file: UploadFile = File(...)):
     kind = table_kind(filename)
     _require_model_ready(model_name, model)
 
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
+    # Parsing a 22k-column table and scoring it is CPU-bound (seconds for large batches);
+    # run it in the threadpool so other requests are not blocked meanwhile. The job slot
+    # keeps CSV/TSV parsing one-at-a-time, as it was when this ran on the event loop.
+    preds, probas, class_keys, sample_ids = await run_in_threadpool(
+        _score_expression_table_one_at_a_time, model_name, model, kind, contents, filename
+    )
+
+    # 5. Format the results
+    results = []
+    for i in range(len(preds)):
+        row_probs = {key: float(p) for key, p in zip(class_keys, probas[i])}
+        row = {
+            "sample_index": i,
+            "prediction": _normalize_class_label(preds[i]),
+            "probability": float(max(probas[i])),
+            "class_probabilities": row_probs
+        }
+        if sample_ids:
+            row["sample_id"] = sample_ids[i]
+        results.append(row)
+
+    return {"filename": file.filename, "samples_processed": len(results), "results": results}
+
+
+# Parsing a GPL96 table temporarily needs roughly 9x the file size in memory (one Python
+# object per cell). Concurrent parses multiply that peak: two concurrent 40-row uploads
+# OOM-kill a 512 MB instance, and a few near-limit uploads approach 2 GB. Only CSV/TSV
+# parse-and-score jobs take this slot; /health, CEL and explanations never wait on it.
+_CSV_JOB_SLOT = threading.BoundedSemaphore(1)
+
+
+def _score_expression_table_one_at_a_time(model_name, model, kind, contents, filename):
+    # The context manager releases the slot on success and on every exception.
+    with _CSV_JOB_SLOT:
+        # A rejected batch (400/413) propagates its exception out of this worker thread,
+        # and the threadpool hand-off leaves it in a reference cycle that keeps the parsed
+        # frame (hundreds of MB) alive until Python's cyclic GC happens to run; measured,
+        # repeated near-limit rejections grew a 2 GB instance until it was OOM-killed.
+        # Collecting here frees the previous job's cycle before the next parse peaks.
+        gc.collect()
+        return _score_expression_table(model_name, model, kind, contents, filename)
+
+
+def _score_expression_table(model_name, model, kind, contents, filename):
     try:
-        contents = await file.read(MAX_UPLOAD_BYTES + 1)
-        if len(contents) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
         df = read_expression_table(contents, filename)
         expected_feature_ids = _feature_ids(model)
         if expected_feature_ids is None:
@@ -1164,19 +1296,4 @@ async def predict_csv(model_name: str, file: UploadFile = File(...)):
     except Exception as exc:
         logger.exception("Batch prediction failed for %s", model_name)
         raise HTTPException(status_code=500, detail="Prediction failed.") from exc
-
-    # 5. Format the results
-    results = []
-    for i in range(len(preds)):
-        row_probs = {key: float(p) for key, p in zip(class_keys, probas[i])}
-        row = {
-            "sample_index": i,
-            "prediction": _normalize_class_label(preds[i]),
-            "probability": float(max(probas[i])),
-            "class_probabilities": row_probs
-        }
-        if sample_ids:
-            row["sample_id"] = sample_ids[i]
-        results.append(row)
-
-    return {"filename": file.filename, "samples_processed": len(results), "results": results}
+    return preds, probas, class_keys, sample_ids

@@ -4,7 +4,7 @@ Single-page React client for the MICRO-AI FastAPI prediction service.
 
 ## Run
 
-The app calls `https://microai-api.onrender.com` by default. Set `VITE_API_BASE_URL` before building or starting Vite to use another API origin, for example `VITE_API_BASE_URL=http://127.0.0.1:8000`.
+Set `VITE_API_BASE_URL` to the API origin before building or starting Vite, for example `VITE_API_BASE_URL=http://127.0.0.1:8000`. Vite embeds the value at build time, so production builds must set it to the deployed API's URL (shown on the API service's Render dashboard page) and be rebuilt after it changes. If it is unset, `src/api.js` falls back to a hard-coded `https://microai-api-1.onrender.com`; do not rely on that fallback unless you have confirmed it is the deployed API.
 
 Predictions require the selected model to publish a verified ordered `feature_ids` schema. Single-sample JSON must be an array containing one `{"feature_id":"...","value":1.23}` object per required ID; entries may be reordered but IDs must be unique and complete. CSV/TSV files must provide matching feature IDs in a header or gene-ID column. Values must be finite. Models without a complete verified schema and fitted pipeline are intentionally unavailable for prediction.
 
