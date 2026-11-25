@@ -383,6 +383,9 @@ def test_predict_cel_processes_supported_filename_variations(client, fake_model,
         f"/predict_cel/{model_name}",
         files={"file": (filename, payload, "application/octet-stream")},
     )
+    # The validated upload reaches R unchanged: affy's ReadAffy reads .CEL.gz natively,
+    # so compressed files are not decompressed to a second temporary copy.
+    expected_input = (".gz", payload) if compressed else (".CEL", cel_contents)
 
     assert response.status_code == 200
     body = response.json()
@@ -394,7 +397,35 @@ def test_predict_cel_processes_supported_filename_variations(client, fake_model,
         "expression": [1.0, 2.0, 3.0],
         "feature_ids": FEATURE_IDS,
     }
-    assert seen_inputs == [(".CEL", cel_contents)]
+    assert seen_inputs == [expected_input]
+
+
+def test_predict_cel_rejects_oversized_decompressed_gzip(client, fake_model, monkeypatch):
+    import gzip
+
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 4096)
+    monkeypatch.setattr(main, "run_affy_preprocessing", lambda _path: pytest.fail("R must not run"))
+    response = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL.gz", gzip.compress(b"0" * 10_000), "application/gzip")},
+    )
+
+    assert response.status_code == 413
+    assert "decompressed" in response.json()["detail"]
+
+
+def test_predict_cel_rejects_truncated_gzip(client, fake_model, monkeypatch):
+    import gzip
+
+    monkeypatch.setattr(main, "run_affy_preprocessing", lambda _path: pytest.fail("R must not run"))
+    truncated = gzip.compress(b"fake cel contents" * 100)[:-6]
+    response = client.post(
+        "/predict_cel/gse7390",
+        files={"file": ("sample.CEL.gz", truncated, "application/gzip")},
+    )
+
+    assert response.status_code == 400
+    assert "gzip" in response.json()["detail"].lower()
 
 
 def test_predict_cel_rejects_unsupported_extension(client):
@@ -542,3 +573,227 @@ def test_predict_cel_returns_expression_aligned_with_feature_ids(client, fake_mo
     assert replay.status_code == 200
     assert replay.json()["prediction"] == body["prediction"]
     assert replay.json()["class_probabilities"] == body["class_probabilities"]
+
+
+def test_large_responses_are_gzip_compressed_for_clients_that_accept_it(client, fake_model):
+    from conftest import FakeModel
+
+    main.MODELS["gse7390"] = FakeModel(n_genes=500)
+    compressed = client.get("/models", headers={"Accept-Encoding": "gzip"})
+    plain = client.get("/models", headers={"Accept-Encoding": "identity"})
+
+    assert compressed.status_code == plain.status_code == 200
+    assert compressed.headers.get("content-encoding") == "gzip"
+    assert "content-encoding" not in plain.headers
+    assert compressed.json() == plain.json()
+
+
+class _ParseProbe:
+    """Wraps tabular parsing to observe how many CSV jobs parse at the same time."""
+
+    def __init__(self, original, hold_first=None, fail_first=None):
+        import threading
+
+        self._original = original
+        self._lock = threading.Lock()
+        self.active = 0
+        self.max_active = 0
+        self.entered = 0
+        self.first_entered = threading.Event()
+        self.hold_first = hold_first
+        self.fail_first = fail_first
+
+    def __call__(self, contents, filename):
+        with self._lock:
+            self.entered += 1
+            call_number = self.entered
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            if call_number == 1:
+                self.first_entered.set()
+                if self.hold_first is not None:
+                    assert self.hold_first.wait(timeout=10), "test did not release the first CSV job"
+                if self.fail_first is not None:
+                    raise self.fail_first
+            return self._original(contents, filename)
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+def _post_csv_in_thread(client, results, index, model_name="gse7390"):
+    import threading
+
+    def run():
+        results[index] = _upload(
+            client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv", model_name
+        )
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    return thread
+
+
+def _slot_is_free():
+    if main._CSV_JOB_SLOT.acquire(blocking=False):
+        main._CSV_JOB_SLOT.release()
+        return True
+    return False
+
+
+def test_concurrent_csv_jobs_parse_one_at_a_time_and_all_succeed(client, monkeypatch):
+    import threading
+    import time
+
+    expected = _upload(client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv").json()
+    release = threading.Event()
+    probe = _ParseProbe(main.read_expression_table, hold_first=release)
+    monkeypatch.setattr(main, "read_expression_table", probe)
+
+    results = [None, None, None]
+    threads = [_post_csv_in_thread(client, results, 0)]
+    assert probe.first_entered.wait(timeout=10)
+    threads += [_post_csv_in_thread(client, results, index) for index in (1, 2)]
+    time.sleep(0.5)
+    # While the first job holds the slot, the others wait instead of parsing concurrently.
+    assert probe.entered == 1
+    release.set()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+
+    assert probe.entered == 3
+    assert probe.max_active == 1
+    for response in results:
+        assert response.status_code == 200
+        assert response.json() == expected
+    assert _slot_is_free()
+
+
+def test_health_and_explanations_are_not_blocked_by_a_running_csv_job(client, monkeypatch):
+    import threading
+    import time
+
+    release = threading.Event()
+    probe = _ParseProbe(main.read_expression_table, hold_first=release)
+    monkeypatch.setattr(main, "read_expression_table", probe)
+    monkeypatch.setattr(
+        main.XAI_SERVICE,
+        "explain_local",
+        lambda **_kwargs: {
+            "output": "calibrated_class_probability",
+            "base_value": 0.4,
+            "predicted_output": 0.8,
+            "features": [
+                {"feature_id": "g1", "raw_input_value": 1.5, "model_input_value": 1.5, "shap_value": 0.4},
+            ],
+            "metadata": {
+                "method": "shap_permutation",
+                "explained_feature_space": "selected_standardized_features",
+                "background_samples": 2,
+                "max_evals": 1000,
+                "additivity_residual": 0.0,
+                "additivity_tolerance": 0.01,
+                "additivity_verified": True,
+                "preprocessing_scope_note": "Selected features only.",
+            },
+        },
+    )
+
+    results = [None]
+    thread = _post_csv_in_thread(client, results, 0)
+    try:
+        assert probe.first_entered.wait(timeout=10)
+        assert not _slot_is_free()
+
+        started = time.perf_counter()
+        health = client.get("/health")
+        assert health.status_code == 200
+        assert time.perf_counter() - started < 2
+
+        explanation = client.post(
+            "/explain/gse7390",
+            json={"expression": SAMPLES[0], "feature_ids": FEATURE_IDS, "sample_id": "a"},
+        )
+        assert explanation.status_code == 200
+        assert explanation.json()["sample_id"] == "a"
+        assert explanation.json()["prediction"] == "1"
+    finally:
+        release.set()
+        thread.join(timeout=20)
+
+    assert results[0].status_code == 200
+    assert _slot_is_free()
+
+
+@pytest.mark.parametrize(
+    ("failure", "status_code"),
+    [
+        (RuntimeError("parser crashed"), 400),   # unexpected error -> "Unable to read" response
+        (ValueError("The CSV file is empty."), 400),
+    ],
+)
+def test_failed_csv_job_releases_the_slot(client, monkeypatch, failure, status_code):
+    probe = _ParseProbe(main.read_expression_table, fail_first=failure)
+    monkeypatch.setattr(main, "read_expression_table", probe)
+
+    failed = _upload(client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv")
+    assert failed.status_code == status_code
+    assert _slot_is_free()
+
+    recovered = _upload(client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv")
+    assert recovered.status_code == 200
+    assert recovered.json()["samples_processed"] == 2
+    assert _slot_is_free()
+
+
+def test_failed_batch_prediction_releases_the_slot(client, fake_model, monkeypatch):
+    def broken_predict_proba(_X):
+        raise RuntimeError("model failure")
+
+    monkeypatch.setattr(fake_model, "predict_proba", broken_predict_proba)
+    failed = _upload(client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv")
+
+    assert failed.status_code == 500
+    assert failed.json() == {"detail": "Prediction failed."}
+    assert _slot_is_free()
+
+
+def test_csv_job_frees_previous_jobs_cyclic_garbage_before_parsing(client, monkeypatch):
+    import gc
+    import weakref
+
+    class LargeParsedTable:
+        pass
+
+    seen_alive_at_second_parse = []
+    previous = {}
+    original = main.read_expression_table
+
+    def probe(contents, filename):
+        if "table" not in previous:
+            # First job: leave its parsed table in a reference cycle, as a rejected
+            # batch's exception/traceback does, then fail the job.
+            table = LargeParsedTable()
+            table.self_reference = table
+            previous["table"] = weakref.ref(table)
+            del table
+            raise ValueError("The batch exceeds the configured processing limit.")
+        seen_alive_at_second_parse.append(previous["table"]() is not None)
+        return original(contents, filename)
+
+    monkeypatch.setattr(main, "read_expression_table", probe)
+    automatic_gc = gc.isenabled()
+    gc.disable()
+    try:
+        first = _upload(client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv")
+        assert first.status_code == 400
+        assert previous["table"]() is not None  # still held by the cycle
+        second = _upload(client, "batch.csv", encode_samples_as_rows(SAMPLES, ids=["a", "b"]), "text/csv")
+    finally:
+        if automatic_gc:
+            gc.enable()
+
+    assert second.status_code == 200
+    assert seen_alive_at_second_parse == [False]

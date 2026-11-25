@@ -241,3 +241,72 @@ def test_local_explanation_refuses_prediction_output_mismatch(tmp_path):
             target_index=1,
             expected_probability=0.6,
         )
+
+def _explain(service, model, target_index, expected_probability, expression=(2.0, 8.0, 5.0)):
+    return service.explain_local(
+        "gse7390",
+        model,
+        np.array([list(expression)]),
+        FEATURE_IDS,
+        target_index=target_index,
+        expected_probability=expected_probability,
+    )
+
+
+def test_background_is_prepared_once_per_model_across_explained_classes(tmp_path, monkeypatch):
+    service = XAIService(background_paths={"gse7390": _background_file(tmp_path)}, shap_module=FakeShap)
+    model = ExplainableFakeModel()
+    loads = []
+    original_load = service._load_background
+    monkeypatch.setattr(service, "_load_background", lambda *args: loads.append(1) or original_load(*args))
+
+    _explain(service, model, target_index=1, expected_probability=0.7)
+    _explain(service, model, target_index=0, expected_probability=0.3)
+
+    assert len(loads) == 1
+
+
+def test_explainer_cache_holds_every_model_class_pair_without_rebuilding(tmp_path):
+    service = XAIService(background_paths={"gse7390": _background_file(tmp_path)}, shap_module=FakeShap)
+    models = [ExplainableFakeModel(), ExplainableFakeModel()]
+    for model in models:
+        for target_index, probability in ((1, 0.7), (0, 0.3)):
+            _explain(service, model, target_index, probability)
+    builds_after_first_pass = FakeShap.explainer_builds
+
+    for model in models:
+        for target_index, probability in ((1, 0.7), (0, 0.3)):
+            _explain(service, model, target_index, probability)
+
+    assert FakeShap.explainer_builds == builds_after_first_pass
+
+
+def test_cached_explainers_still_explain_each_patient_from_its_own_vector(tmp_path):
+    service = XAIService(background_paths={"gse7390": _background_file(tmp_path)}, shap_module=FakeShap)
+    model = ExplainableFakeModel()
+
+    first = _explain(service, model, 1, 0.7, expression=(2.0, 8.0, 5.0))
+    second = _explain(service, model, 1, 0.6, expression=(1.0, 8.0, 5.0))
+
+    first_by_id = {feature["feature_id"]: feature for feature in first["features"]}
+    second_by_id = {feature["feature_id"]: feature for feature in second["features"]}
+    assert first_by_id["probe1"]["raw_input_value"] == 2.0
+    assert second_by_id["probe1"]["raw_input_value"] == 1.0
+    assert first["predicted_output"] == pytest.approx(0.7)
+    assert second["predicted_output"] == pytest.approx(0.6)
+
+
+def test_warm_up_builds_every_class_explainer_without_caching_patient_results(tmp_path):
+    service = XAIService(background_paths={"gse7390": _background_file(tmp_path)}, shap_module=FakeShap)
+    model = ExplainableFakeModel()
+    builds_before = FakeShap.explainer_builds
+
+    service.warm_up("gse7390", model, FEATURE_IDS, class_count=2)
+
+    assert FakeShap.explainer_builds == builds_before + 2
+    assert len(service._background_cache) == 1
+    # Only model-level objects are cached; a later patient request reuses them.
+    _explain(service, model, 1, 0.7)
+    _explain(service, model, 0, 0.3)
+    assert FakeShap.explainer_builds == builds_before + 2
+    assert all(len(entry) == 3 for entry in service._cache.values())

@@ -65,14 +65,34 @@ Frontend integration requirements: display an Explain action only when model met
 
 Configure a verified, feature-ID-labelled background CSV using `MICROAI_XAI_GSE7390_BACKGROUND` or `MICROAI_XAI_GSE2034_BACKGROUND`; by default, the bundled `xai/backgrounds/GSE7390_background.csv` and `GSE2034_background.csv` are used. Limits: `MICROAI_XAI_BACKGROUND_SAMPLES` (50), `MICROAI_XAI_MAX_EVALS` (1,000), `MICROAI_XAI_MAX_BACKGROUND_BYTES` (64 MiB), `MICROAI_XAI_MAX_BACKGROUND_ROWS` (1,000), and `MICROAI_XAI_MAX_BACKGROUND_CELLS` (2,500,000). Global SHAP rankings and batch explanations are not exposed. Explanation readiness is blocked unless the artifact has verified full feature IDs and preprocessing metadata and the approved reference data exists.
 
+Performance settings: `MICROAI_XAI_WARMUP` (`startup` by default) prepares every model's SHAP explainers before the server accepts traffic, so the first explanation takes ~1 s instead of ~8 s (boot is ~10 s longer); `background` warms in a thread after boot instead (requests arriving meanwhile are slowed by GIL contention), and `0` warms lazily on the first explanation. `MICROAI_XAI_EXPLAINER_CACHE_SIZE` (8) bounds cached model-level explainers (one per model and explained class). Only model-level objects are cached; each patient's explanation is always computed from that request's expression vector.
+
 The service does not claim clinical validity. Verify model artifacts, ordered feature identifiers, training/inference preprocessing, and external evaluation before use.
 
 ## Deployment (Docker / Render) and CEL preprocessing
 
-Single-patient `.CEL`/`.CEL.gz` uploads are preprocessed by `affy_mas5.R` (affy `ReadAffy` → `mas5(normalize = TRUE, sc = 600)` → `log2(exprs())`), which needs R plus the Bioconductor `affy` and `hgu133acdf` (GPL96 CDF) packages. Render's native Python runtime cannot install these, so the backend deploys as a Docker service: `backend/Dockerfile` installs R and the packages at build time (`install_r_packages.R`; any failure aborts the build) and `render.yaml` defines the service.
+Single-patient `.CEL`/`.CEL.gz` uploads are preprocessed by `affy_mas5.R` (affy `ReadAffy` → `mas5(normalize = TRUE, sc = 600)` → `log2(exprs())`), which needs R plus the Bioconductor `affy` and `hgu133acdf` (GPL96 CDF) packages. The backend deploys as two Docker web services defined in `backend/render.yaml`:
+
+| Service | Dockerfile | Instance | Notes |
+|---|---|---|---|
+| `microai-backend` (API) | `backend/Dockerfile` (no R) | `1c-2g` (Render Standard: 1 CPU / 2 GB) | Measured: ~340 MiB after the SHAP warm-up, 650 MiB+ while parsing a large CSV/TSV batch; 512 MB instances were OOM-killed. CSV/TSV batches are parsed one at a time. |
+| `microai-cel-preprocessor` | `backend/Dockerfile.cel` (R, affy, `install_r_packages.R`; any failure aborts the build) | `0.5c-512mb` (Render Starter: 0.5 CPU / 512 MB) | One uvicorn process, one MAS5 job at a time. Do not add `--workers`. |
+
+The Blueprint file is not at the repository root: set **Blueprint Path** to `backend/render.yaml` when creating or syncing the Blueprint. It omits `rootDir` and gives repository-root paths (`./backend/Dockerfile`, context `./backend`), plus `buildFilter` paths so only backend changes trigger deploys. If the services already exist in the dashboard, check the Blueprint sync preview before applying: Render overwrites dashboard settings (instance type, root directory, Dockerfile path) with the Blueprint's values.
+
+Environment variables to configure in Render:
+
+| Service | Variable | How to set it |
+|---|---|---|
+| API | `MICROAI_CEL_SERVICE_URL` | **Required, manual.** The CEL service's base URL with no path (open the `microai-cel-preprocessor` service in the dashboard; its `https://….onrender.com` URL is shown under the service name). `sync: false` values are only prompted when a Blueprint is first created, so on an existing service set it under **Environment**. Without it, CEL uploads fail (the API image has no R). |
+| API | `MICROAI_CEL_SERVICE_TOKEN` | Linked by the Blueprint to the CEL service's generated value. If the services were created by hand, copy the CEL service's value (its **Environment** tab) into the API service; the two must match. Never commit it. |
+| Both | `MICROAI_RSCRIPT_TIMEOUT_SECONDS` | Set to `300` by the Blueprint. |
+| API | `MICROAI_XAI_WARMUP` | Leave unset (defaults to `startup`). |
+| Frontend (Vercel or other host) | `VITE_API_BASE_URL` | **Required at build time.** The API service's `https://….onrender.com` URL from its dashboard page. Vite embeds it when the frontend is built, so redeploy the frontend after changing it. |
 
 - `RSCRIPT_PATH` (optional): explicit Rscript path; otherwise `Rscript` is resolved from `PATH`.
 - `MICROAI_RSCRIPT_TIMEOUT_SECONDS` (default 300): per-file R time limit.
+- `MICROAI_CEL_QUEUE_WAIT_SECONDS` (default 45) and `MICROAI_CEL_MAX_QUEUED` (default 4), CEL preprocessing service: MAS5 runs one job at a time (memory); a request that finds it busy waits up to this long for the slot, with at most this many waiting, before returning HTTP 503.
 - `MICROAI_REQUIRE_R` (set to `1` in the image): startup fails if Rscript, the R packages, or the MAS5 script are missing. Startup logs print the R version and package versions; `/health` reports `cel_preprocessing_available`.
 
 Local check: `docker build -t microai-backend backend` then `docker run --rm -v /path/to/cel:/data -e MICROAI_TEST_CEL=/data/<GPL96 sample>.CEL.gz microai-backend python -m pytest`.

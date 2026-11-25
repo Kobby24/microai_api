@@ -371,13 +371,31 @@ describe('analysis workflow surfaces', () => {
       React.createElement(AnalysisLoadingOverlay, { mode: 'json' }),
     )
     assert.match(markup, /Running analysis/)
-    assert.match(markup, /Validate data/)
-    assert.match(markup, /Run model/)
+    assert.match(markup, /Sending patient data/)
+    assert.match(markup, /Running the model/)
     assert.match(markup, /dna-loader--large/)
     assert.doesNotMatch(markup, /dna-loader--small/)
     assert.match(markup, /indeterminate-bar/)
     assert.doesNotMatch(markup, /animate-spin/)
-    assert.doesNotMatch(markup, /10%|50%|100%/)
+    // Without real upload byte counts there is no percentage, and nothing is shown as done.
+    assert.doesNotMatch(markup, /\d+%/)
+    assert.doesNotMatch(markup, /text-emerald-700/)
+  })
+
+  it('shows CEL server processing only after the upload has been sent', () => {
+    const uploading = renderToStaticMarkup(
+      React.createElement(AnalysisLoadingOverlay, { mode: 'cel', progress: { phase: 'uploading', loaded: 512, total: 1024 } }),
+    )
+    assert.match(uploading, /Uploading patient data/)
+    assert.match(uploading, /50% sent/)
+    assert.doesNotMatch(uploading, /text-emerald-700/)
+
+    const processing = renderToStaticMarkup(
+      React.createElement(AnalysisLoadingOverlay, { mode: 'cel', progress: { phase: 'processing', loaded: 1024, total: 1024 } }),
+    )
+    assert.match(processing, /Preprocessing the CEL file \(MAS5\) and running the model/)
+    assert.equal((processing.match(/text-emerald-700/g) || []).length, 1)
+    assert.doesNotMatch(processing, /% sent/)
   })
 
   it('renders the dedicated explanation page and preserves an unavailable state', () => {

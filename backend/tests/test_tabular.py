@@ -124,3 +124,46 @@ def test_rejects_positional_data_without_feature_identifiers():
 def test_rejects_missing_model_feature_schema():
     with pytest.raises(ValueError, match="schema is unavailable"):
         prepare_expression_matrix(pd.DataFrame([[1, 2, 3]]), 3, "gse7390")
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [["7", "-0", "2.5"], ["8", "1", "-0"]],          # integer-only column: "-0" -> +0.0
+        [["7.5", "-0.0", "1"], ["-0", "2", "3"]],        # float column keeps -0.0
+        [["9007199254740993", "1.5"], ["2", "2.5"]],     # integer beyond 2**53
+        [["1e-3", " 2.5", "3.0 "], [".5", "5.", "+3.5"]],
+        [["abc", "1"], ["2", ""]],                       # non-numeric cells are rejected
+    ],
+)
+def test_numeric_values_is_bit_identical_to_per_column_conversion(rows):
+    import numpy as np
+    import pandas as pd
+
+    from tabular import _numeric_values
+
+    frame = pd.DataFrame(rows, dtype=object)
+    reference = frame.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    if not np.isfinite(reference).all():
+        with pytest.raises(ValueError, match="numeric and finite"):
+            _numeric_values(frame)
+        return
+    result = _numeric_values(frame)
+    assert result.dtype == reference.dtype and result.shape == reference.shape
+    assert np.array_equal(result.view(np.uint64), reference.view(np.uint64))
+
+
+def test_numeric_values_handles_typed_columns_like_per_column_conversion():
+    import numpy as np
+    import pandas as pd
+
+    from tabular import _numeric_values
+
+    frame = pd.DataFrame({
+        "ints": np.array([12345678901234567, 0]),
+        "floats": np.array([-0.0, 3.0]),
+        "flags": np.array([True, False]),
+        "text": np.array(["4.5", "-0"], dtype=object),
+    })
+    reference = frame.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    assert np.array_equal(_numeric_values(frame).view(np.uint64), reference.view(np.uint64))
