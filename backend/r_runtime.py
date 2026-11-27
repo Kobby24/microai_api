@@ -5,10 +5,14 @@ Standard library only, so the lightweight CEL preprocessing service
 """
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
+import threading
+from collections import deque
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 def positive_limit(name: str, default: int) -> int:
@@ -121,7 +125,7 @@ def run_affy_preprocessing_local(cel_path: str) -> Tuple[Dict[str, float], List[
             f"Affymetrix CEL preprocessing exceeded the {RSCRIPT_TIMEOUT_SECONDS}s time limit."
         ) from exc
     except subprocess.CalledProcessError as exc:
-        raise RuntimeError(exc.stderr.strip() or "Affymetrix CEL preprocessing failed in R.") from exc
+        raise RuntimeError(_r_error_text(exc.stderr) or "Affymetrix CEL preprocessing failed in R.") from exc
 
     output = completed.stdout.strip()
     if not output:
@@ -132,4 +136,120 @@ def run_affy_preprocessing_local(cel_path: str) -> Tuple[Dict[str, float], List[
     except json.JSONDecodeError as exc:
         raise RuntimeError("Affymetrix CEL preprocessing returned malformed expression data.") from exc
 
+    return parse_expression_payload(payload)
+
+
+# --------------------------------------------------------------------------- live stages
+# affy_mas5.R prints "MICROAI_STAGE <name>" (stderr) before each top-level step. Inside
+# mas5(), affy itself prints "N ids to be processed" when expression summarization starts
+# (after background correction). Only these real signals become stage events.
+R_STAGE_MARKER = "MICROAI_STAGE "
+R_MARKER_STAGES = {
+    "loading_affy": "loading_affy",
+    "reading_cel": "reading_cel",
+    "mas5": "mas5_background",
+    "extracting": "extracting",
+    "exporting": "exporting",
+}
+_AFFY_SUMMARIZATION_LINE = re.compile(r"^\d+ ids to be processed\s*$")
+
+
+class PreprocessingCancelled(RuntimeError):
+    """The caller cancelled CEL preprocessing; the R process was stopped."""
+
+
+def r_stage_from_line(line: str) -> Optional[str]:
+    text = line.strip()
+    if text.startswith(R_STAGE_MARKER):
+        return R_MARKER_STAGES.get(text[len(R_STAGE_MARKER):].strip())
+    if _AFFY_SUMMARIZATION_LINE.match(text):
+        return "mas5_summaries"
+    return None
+
+
+def _r_error_text(stderr: str) -> str:
+    lines = [line for line in (stderr or "").splitlines() if not line.startswith(R_STAGE_MARKER)]
+    return "\n".join(lines).strip()
+
+
+def run_affy_preprocessing_streaming(
+    cel_path: str,
+    on_stage: Optional[Callable[[str], None]] = None,
+    cancel: Optional[threading.Event] = None,
+) -> Tuple[Dict[str, float], List[float]]:
+    """Run the same MAS5 script as run_affy_preprocessing_local, reporting real stages.
+
+    stdout (the ~0.7 MB JSON payload) goes to a temporary file so it can never fill a
+    pipe while stderr is read line by line. The R process is killed when ``cancel`` is
+    set or the configured time limit passes.
+    """
+    script_path = AFFY_SCRIPT_PATH
+    if not script_path.is_file():
+        raise FileNotFoundError("The Affymetrix MAS5 preprocessing script is unavailable.")
+    rscript = resolve_rscript()
+    stderr_tail: deque = deque(maxlen=200)
+    finished = threading.Event()
+    stopped = {"timeout": False, "cancelled": False}
+
+    with tempfile.TemporaryFile() as stdout_file:
+        try:
+            process = subprocess.Popen(
+                [rscript, "--vanilla", str(script_path), str(cel_path)],
+                stdout=stdout_file,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("Rscript is required to preprocess Affymetrix CEL files.") from exc
+
+        def supervise():
+            # Stops R on timeout or cancellation; exits as soon as R finishes.
+            waited = 0.0
+            while not finished.wait(0.2):
+                waited += 0.2
+                if cancel is not None and cancel.is_set():
+                    stopped["cancelled"] = True
+                elif waited >= RSCRIPT_TIMEOUT_SECONDS:
+                    stopped["timeout"] = True
+                else:
+                    continue
+                process.kill()
+                return
+
+        supervisor = threading.Thread(target=supervise, name="rscript-supervisor", daemon=True)
+        supervisor.start()
+        try:
+            for line in process.stderr:
+                stage = r_stage_from_line(line)
+                if stage is not None:
+                    if on_stage is not None and not stopped["cancelled"]:
+                        on_stage(stage)
+                else:
+                    stderr_tail.append(line.rstrip("\n"))
+            returncode = process.wait()
+        finally:
+            finished.set()
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            supervisor.join(timeout=5)
+
+        if stopped["cancelled"]:
+            raise PreprocessingCancelled("CEL preprocessing was cancelled.")
+        if stopped["timeout"]:
+            raise RuntimeError(f"Affymetrix CEL preprocessing exceeded the {RSCRIPT_TIMEOUT_SECONDS}s time limit.")
+        if returncode != 0:
+            raise RuntimeError("\n".join(stderr_tail).strip() or "Affymetrix CEL preprocessing failed in R.")
+        stdout_file.seek(0)
+        output = stdout_file.read().decode("utf-8").strip()
+
+    if not output:
+        raise RuntimeError("Affymetrix CEL preprocessing returned no expression data.")
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Affymetrix CEL preprocessing returned malformed expression data.") from exc
     return parse_expression_payload(payload)

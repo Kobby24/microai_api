@@ -3,6 +3,7 @@ import gc
 import gzip
 import io
 import joblib
+import json
 import logging
 import sqlite3
 import tempfile
@@ -11,11 +12,11 @@ import time
 import numpy as np
 import os
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, Header, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict
@@ -36,15 +37,18 @@ from tabular import (
     table_kind,
 )
 from xai_service import XAIService, XAIServiceError
+from cel_jobs import CEL_JOBS, CelJobCapacityError
 from r_runtime import (  # noqa: F401 - re-exported for callers/tests
     AFFY_SCRIPT_PATH,
     REQUIRED_R_PACKAGES,
     RSCRIPT_TIMEOUT_SECONDS,
     R_RUNTIME_STATUS,
     check_r_runtime,
+    PreprocessingCancelled,
     parse_expression_payload,
     resolve_rscript,
     run_affy_preprocessing_local,
+    run_affy_preprocessing_streaming,
 )
 
 app = FastAPI(title="MICRO-AI Prediction API")
@@ -289,11 +293,106 @@ def _run_affy_preprocessing_remote(cel_path: str):
     return parse_expression_payload(payload)
 
 
-def run_affy_preprocessing(cel_path: str):
-    """Preprocess one CEL file: via the remote R service when configured, else a local Rscript."""
+# Stage ids the CEL preprocessing service may report (cel_service.py / r_runtime.py).
+# Anything else in the stream is ignored rather than shown to users.
+CEL_SERVICE_STAGES = frozenset({
+    "queued",
+    "preprocessing_started",
+    "loading_affy",
+    "reading_cel",
+    "mas5_background",
+    "mas5_summaries",
+    "extracting",
+    "exporting",
+})
+_CEL_SERVICE_BUSY_DETAIL = "The CEL preprocessor is busy or starting up. Please retry in a minute."
+
+
+def _run_affy_preprocessing_remote_streaming(cel_path: str, on_stage, cancel):
+    """Like _run_affy_preprocessing_remote, but follows the service's live stage events.
+
+    Uses POST /preprocess/stream (newline-delimited JSON with ~1 s heartbeats, so a
+    cancellation is noticed within about a second). Leaving this function closes the
+    connection, which makes the service leave its queue or stop R. A service without
+    the streaming endpoint (older deploy) is used through /preprocess instead.
+    """
+    import httpx
+
+    deadline = time.monotonic() + RSCRIPT_TIMEOUT_SECONDS + 120
+    on_stage("sending_to_preprocessor")
+    try:
+        with open(cel_path, "rb") as stream, httpx.Client(
+            timeout=httpx.Timeout(RSCRIPT_TIMEOUT_SECONDS + 30, read=30.0)
+        ) as client:
+            with client.stream(
+                "POST",
+                f"{CEL_SERVICE_URL}/preprocess/stream",
+                files={"file": (Path(cel_path).name, stream, "application/octet-stream")},
+                headers={"X-CEL-Service-Token": CEL_SERVICE_TOKEN},
+            ) as response:
+                if response.status_code in (404, 405):
+                    fallback = True
+                else:
+                    fallback = False
+                    if response.status_code in (502, 503, 504):
+                        response.read()
+                        logger.warning(
+                            "CEL preprocessing service unavailable: HTTP %s %s",
+                            response.status_code,
+                            response.text[:200],
+                        )
+                        raise HTTPException(status_code=503, detail=_CEL_SERVICE_BUSY_DETAIL)
+                    if response.status_code != 200:
+                        response.read()
+                        raise RuntimeError(
+                            f"CEL preprocessing service returned HTTP {response.status_code}: {response.text[:500]}"
+                        )
+                    for line in response.iter_lines():
+                        if cancel is not None and cancel.is_set():
+                            raise PreprocessingCancelled("CEL preprocessing was cancelled.")
+                        if time.monotonic() > deadline:
+                            raise RuntimeError("CEL preprocessing service exceeded the time limit.")
+                        if not line.strip():
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except ValueError as exc:
+                            raise RuntimeError("CEL preprocessing service sent a malformed event.") from exc
+                        kind = event.get("type") if isinstance(event, dict) else None
+                        if kind == "stage":
+                            if event.get("stage") in CEL_SERVICE_STAGES:
+                                on_stage(event["stage"])
+                        elif kind == "result":
+                            return parse_expression_payload(event)
+                        elif kind == "error":
+                            if event.get("status") == 503:
+                                logger.warning("CEL preprocessing service busy: %s", event.get("detail"))
+                                raise HTTPException(status_code=503, detail=_CEL_SERVICE_BUSY_DETAIL)
+                            raise RuntimeError(f"CEL preprocessing service error: {event.get('detail')}")
+                    if cancel is not None and cancel.is_set():
+                        raise PreprocessingCancelled("CEL preprocessing was cancelled.")
+                    raise RuntimeError("CEL preprocessing service ended the stream without a result.")
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"CEL preprocessing service is unreachable: {exc}") from exc
+    # Older service without live stages: one honest, unsubdivided preprocessing stage.
+    on_stage("mas5_unstaged")
+    return _run_affy_preprocessing_remote(cel_path)
+
+
+def run_affy_preprocessing(cel_path: str, on_stage=None, cancel=None):
+    """Preprocess one CEL file: via the remote R service when configured, else a local Rscript.
+
+    With ``on_stage`` the live-stage variants are used (same R script, same output);
+    without it the behaviour is exactly the original single request.
+    """
+    if on_stage is None:
+        if CEL_SERVICE_URL:
+            return _run_affy_preprocessing_remote(cel_path)
+        return run_affy_preprocessing_local(cel_path)
     if CEL_SERVICE_URL:
-        return _run_affy_preprocessing_remote(cel_path)
-    return run_affy_preprocessing_local(cel_path)
+        return _run_affy_preprocessing_remote_streaming(cel_path, on_stage, cancel)
+    on_stage("preprocessing_started")
+    return run_affy_preprocessing_streaming(cel_path, on_stage=on_stage, cancel=cancel)
 
 
 def _expected_genes(model) -> Optional[int]:
@@ -1052,9 +1151,24 @@ def _validate_gzip_cel(buffer: bytes) -> None:
         raise HTTPException(status_code=400, detail="The uploaded file is not a valid gzip-compressed Affymetrix CEL file.") from exc
 
 
-def _process_cel_upload(model_name, model, expected_ids, buffer: bytes, is_compressed: bool):
+def _process_cel_upload(model_name, model, expected_ids, buffer: bytes, is_compressed: bool, on_stage=None, cancel=None):
+    """Validate, preprocess (MAS5 in R), align and score one CEL upload.
+
+    ``on_stage``/``cancel`` are only passed by CEL analysis jobs: stages are reported
+    right before each step actually starts. The computation is identical either way.
+    """
+    def stage(name):
+        if on_stage is not None:
+            on_stage(name)
+
+    def check_cancelled():
+        if cancel is not None and cancel.is_set():
+            raise PreprocessingCancelled("CEL analysis was cancelled.")
+
+    stage("validating_file")
     if is_compressed:
         _validate_gzip_cel(buffer)
+    check_cancelled()
 
     # The original upload is handed to R as-is: affy's ReadAffy reads gzip natively and
     # produces byte-identical MAS5 output, so no decompressed copy is written or sent.
@@ -1064,8 +1178,11 @@ def _process_cel_upload(model_name, model, expected_ids, buffer: bytes, is_compr
 
     try:
         try:
-            feature_map, _ = run_affy_preprocessing(tmp_path)
-        except HTTPException:
+            if on_stage is None:
+                feature_map, _ = run_affy_preprocessing(tmp_path)
+            else:
+                feature_map, _ = run_affy_preprocessing(tmp_path, on_stage=on_stage, cancel=cancel)
+        except (HTTPException, PreprocessingCancelled):
             raise
         except Exception as exc:
             logger.exception("CEL preprocessing failed for %s", model_name)
@@ -1076,6 +1193,8 @@ def _process_cel_upload(model_name, model, expected_ids, buffer: bytes, is_compr
         except OSError:
             pass
 
+    check_cancelled()
+    stage("validating_expression")
     missing = [feature_id for feature_id in expected_ids if feature_id not in feature_map]
     if missing:
         raise HTTPException(
@@ -1090,6 +1209,8 @@ def _process_cel_upload(model_name, model, expected_ids, buffer: bytes, is_compr
             detail="CEL-derived expression values must be numeric and finite.",
         )
 
+    check_cancelled()
+    stage("predicting")
     predictions, probabilities, class_keys = _checked_predictions(model, ordered.reshape(1, -1))
     return ordered, predictions, probabilities, class_keys
 
@@ -1099,11 +1220,8 @@ class CelPredictionResponse(PredictionResponse):
     feature_ids: List[str]
 
 
-@app.post(
-    "/predict_cel/{model_name}",
-    response_model=CelPredictionResponse,
-)
-async def predict_cel(model_name: str, file: UploadFile = File(...)):
+def _validate_cel_request(model_name: str, file: UploadFile):
+    """Checks shared by /predict_cel and /predict_cel_jobs before any file is processed."""
     model_name = model_name.lower()
     if model_name not in MODELS:
         print(f"predict_cel: model not found: {model_name}")
@@ -1127,15 +1245,10 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
             status_code=503,
             detail="Predictions are unavailable because this model has no verified gene/probe schema.",
         )
+    return model_name, model, expected_ids, is_compressed
 
-    buffer = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(buffer) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
-    # CPU-bound work (gzip check, MAS5 round trip, model scoring) runs in the threadpool
-    # so it never stalls the event loop that serves other requests.
-    ordered, predictions, probabilities, class_keys = await run_in_threadpool(
-        _process_cel_upload, model_name, model, expected_ids, buffer, is_compressed
-    )
+
+def _cel_prediction_payload(expected_ids, ordered, predictions, probabilities, class_keys) -> dict:
     probability_vector = probabilities[0]
     payload = CelPredictionResponse(
         prediction=_normalize_class_label(predictions[0]),
@@ -1148,6 +1261,141 @@ async def predict_cel(model_name: str, file: UploadFile = File(...)):
         feature_ids=list(expected_ids),
     )
     return payload.model_dump(exclude_none=False)
+
+
+@app.post(
+    "/predict_cel/{model_name}",
+    response_model=CelPredictionResponse,
+)
+async def predict_cel(model_name: str, file: UploadFile = File(...)):
+    model_name, model, expected_ids, is_compressed = _validate_cel_request(model_name, file)
+
+    buffer = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(buffer) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
+    # CPU-bound work (gzip check, MAS5 round trip, model scoring) runs in the threadpool
+    # so it never stalls the event loop that serves other requests.
+    ordered, predictions, probabilities, class_keys = await run_in_threadpool(
+        _process_cel_upload, model_name, model, expected_ids, buffer, is_compressed
+    )
+    return _cel_prediction_payload(expected_ids, ordered, predictions, probabilities, class_keys)
+
+
+# --- CEL ANALYSIS JOBS WITH LIVE PROCESSING STAGES ---
+# POST uploads the file and starts the same pipeline as /predict_cel in a worker thread;
+# GET .../events streams the job's real processing stages as server-sent events (and
+# replays them after a reconnect); GET .../result returns the /predict_cel response.
+class CelJobCreated(BaseModel):
+    job_id: str
+    events_url: str
+    result_url: str
+
+
+def _run_cel_job(job, model_name, model, expected_ids, buffer: bytes, is_compressed: bool) -> None:
+    last_stage = {"name": None}
+
+    def on_stage(name: str) -> None:
+        last_stage["name"] = name
+        job.stage(name)
+
+    try:
+        ordered, predictions, probabilities, class_keys = _process_cel_upload(
+            model_name, model, expected_ids, buffer, is_compressed, on_stage=on_stage, cancel=job.cancel_event
+        )
+        if job.cancel_event.is_set():
+            return
+        on_stage("preparing_results")
+        job.complete(_cel_prediction_payload(expected_ids, ordered, predictions, probabilities, class_keys))
+    except PreprocessingCancelled:
+        job.cancel()
+    except HTTPException as exc:
+        job.fail(exc.status_code, exc.detail)
+    except Exception:  # noqa: BLE001 - technical details go to the log, not the user
+        logger.exception("CEL analysis job failed for %s at stage %s", model_name, last_stage["name"])
+        if last_stage["name"] == "predicting":
+            job.fail(500, "Prediction failed.")
+        else:
+            job.fail(500, "Internal server error.")
+
+
+@app.post(
+    "/predict_cel_jobs/{model_name}",
+    response_model=CelJobCreated,
+    status_code=202,
+)
+async def create_cel_job(model_name: str, file: UploadFile = File(...)):
+    model_name, model, expected_ids, is_compressed = _validate_cel_request(model_name, file)
+    buffer = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(buffer) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="The uploaded file exceeds the configured size limit.")
+    try:
+        job = CEL_JOBS.create(model_name)
+    except CelJobCapacityError as exc:
+        raise HTTPException(
+            status_code=503, detail="Too many CEL analyses are running. Please retry in a minute."
+        ) from exc
+    job.stage("received")
+    # A dedicated thread (not the request threadpool): a job mostly waits on R.
+    threading.Thread(
+        target=_run_cel_job,
+        args=(job, model_name, model, expected_ids, buffer, is_compressed),
+        name="cel-job",
+        daemon=True,
+    ).start()
+    return {
+        "job_id": job.id,
+        "events_url": f"/predict_cel_jobs/{job.id}/events",
+        "result_url": f"/predict_cel_jobs/{job.id}/result",
+    }
+
+
+def _get_cel_job(job_id: str):
+    job = CEL_JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="This analysis was not found or has expired.")
+    return job
+
+
+@app.get("/predict_cel_jobs/{job_id}/events")
+async def cel_job_events(
+    job_id: str,
+    last_event_id: Optional[str] = Header(default=None),
+    after: Optional[int] = Query(default=None, ge=0),
+):
+    job = _get_cel_job(job_id)
+    resume_from = after or 0
+    if last_event_id is not None and last_event_id.strip().isdigit():
+        resume_from = max(resume_from, int(last_event_id.strip()))
+    return StreamingResponse(
+        job.sse(resume_from),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            # Already-encoded marker: GZipMiddleware passes it through unbuffered, so each
+            # event reaches the browser as soon as it happens.
+            "Content-Encoding": "identity",
+        },
+    )
+
+
+@app.get(
+    "/predict_cel_jobs/{job_id}/result",
+    response_model=CelPredictionResponse,
+)
+def cel_job_result(job_id: str):
+    job = _get_cel_job(job_id)
+    if job.result is not None:
+        return job.result
+    if job.error is not None:
+        raise HTTPException(status_code=job.error["status"], detail=job.error["detail"])
+    raise HTTPException(status_code=409, detail="The analysis is still running.")
+
+
+@app.delete("/predict_cel_jobs/{job_id}", status_code=204)
+def cancel_cel_job(job_id: str):
+    _get_cel_job(job_id).cancel()
+    return Response(status_code=204)
 
 
 @app.post(

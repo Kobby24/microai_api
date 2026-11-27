@@ -291,6 +291,26 @@ body {
     animation: none;
     transition: none;
   }
+
+  .stage-active-dot {
+    animation: none;
+  }
+}
+
+/* Active processing stage: a slow, subtle pulse (the stage itself only changes when the
+   backend reports the next one). */
+.stage-active-dot {
+  animation: stage-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes stage-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .indeterminate-bar {

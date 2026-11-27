@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { Braces, FileSpreadsheet } from 'lucide-react'
-import { explainJson, extractApiError, fetchHealth, fetchModels, predictCel, predictCsv, predictJson } from './api'
+import { API_BASE, cancelCelJob, createCelJob, explainJson, extractApiError, fetchCelJobResult, fetchHealth, fetchModels, isMissingCelJobRoute, predictCel, predictCsv, predictJson } from './api'
+import { followCelJob } from './celJob'
 import Header from './components/Header'
 import ModelSelector from './components/ModelSelector'
 import ErrorBanner from './components/ErrorBanner'
@@ -49,6 +50,8 @@ export default function App() {
   const explanationAbortController = useRef(null)
   const batchSourceRef = useRef(null)
   const batchRequestKeyRef = useRef(null)
+  // The running CEL analysis job (id + event follower), so it can be cancelled.
+  const celJobRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -102,8 +105,8 @@ export default function App() {
     }
   }
 
-  function startAnalysisProgress() {
-    setAnalysisProgress(initialAnalysisProgress)
+  function startAnalysisProgress(extra = {}) {
+    setAnalysisProgress({ ...initialAnalysisProgress, ...extra })
     setLoading(true)
   }
 
@@ -112,7 +115,7 @@ export default function App() {
     // Upload events can fire every few milliseconds; re-render only when the shown
     // whole-percent value or the phase changes.
     setAnalysisProgress((previous) => (
-      previous.phase === next.phase && uploadPercent(previous) === uploadPercent(next) ? previous : next
+      previous.phase === next.phase && uploadPercent(previous) === uploadPercent(next) ? previous : { ...previous, ...next }
     ))
   }
 
@@ -224,8 +227,8 @@ export default function App() {
       if (!celFile) {
         throw new Error('Select a .CEL or .CEL.gz file first.')
       }
-      startAnalysisProgress()
-      const result = await predictCel(selectedModel, celFile, handleUploadProgress)
+      const result = await runCelJob(selectedModel, celFile)
+      if (!result) return false // cancelled by the user
       const patientId = result.sample_id || sampleId.trim()
       setJsonResult({ ...result, sample_id: patientId || null })
       setJsonRequest({
@@ -240,6 +243,55 @@ export default function App() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Uploads the CEL file as an analysis job and follows the backend's real processing
+  // stages until the result is ready. Returns the /predict_cel-shaped result, or null
+  // when the user cancelled. Falls back to the original single request when the API
+  // predates CEL jobs.
+  async function runCelJob(modelName, file) {
+    startAnalysisProgress({ celJob: true, events: [] })
+    let job
+    try {
+      job = await createCelJob(modelName, file, handleUploadProgress)
+    } catch (err) {
+      if (!isMissingCelJobRoute(err)) throw err
+      startAnalysisProgress()
+      return predictCel(modelName, file, handleUploadProgress)
+    }
+    const follower = followCelJob({
+      apiBase: API_BASE,
+      jobId: job.job_id,
+      onEvent: (event) => setAnalysisProgress((previous) => ({
+        ...previous,
+        phase: 'processing',
+        events: [...(previous.events || []), event],
+      })),
+      onConnectionChange: (connection) => setAnalysisProgress((previous) => (
+        previous.connection === connection ? previous : { ...previous, connection }
+      )),
+    })
+    celJobRef.current = { id: job.job_id, follower, cancelled: false }
+    setAnalysisProgress((previous) => ({ ...previous, phase: 'processing', jobId: job.job_id }))
+    try {
+      await follower.promise
+      setAnalysisProgress((previous) => ({ ...previous, fetchingResult: true }))
+      return await fetchCelJobResult(job.job_id)
+    } catch (err) {
+      if (celJobRef.current?.cancelled || err?.kind === 'cancelled') return null
+      throw err
+    } finally {
+      follower.close()
+      celJobRef.current = null
+    }
+  }
+
+  function cancelCelAnalysis() {
+    const job = celJobRef.current
+    if (!job) return
+    job.cancelled = true
+    cancelCelJob(job.id)
+    job.follower.close()
   }
 
   async function runCsvPrediction() {
@@ -510,6 +562,19 @@ export default function App() {
     shouldScrollToPatientDataRef.current = false
   }, [workflowStep])
 
+  useEffect(() => {
+    // Leaving or closing the page cancels a running CEL job instead of leaving it to run.
+    function cancelOnLeave() {
+      const job = celJobRef.current
+      if (job) cancelCelJob(job.id, { keepalive: true })
+    }
+    window.addEventListener('pagehide', cancelOnLeave)
+    return () => {
+      window.removeEventListener('pagehide', cancelOnLeave)
+      cancelOnLeave()
+    }
+  }, [])
+
   const selectedMeta = models.find((model) => model.name === selectedModel) || null
   const questionPrompt =
     selectedMeta?.predicts === 'relapse'
@@ -677,7 +742,7 @@ export default function App() {
         )}
       </main>
       {reviewOpen && <AnalysisReviewDialog model={selectedMeta} mode={pendingMode} file={pendingMode === 'cel' ? celFile : csvFile} sampleId={sampleId} onCancel={handleBackToInput} onConfirm={handleRunAnalysis} />}
-      {loading && <AnalysisLoadingOverlay mode={pendingMode} progress={analysisProgress} />}
+      {loading && <AnalysisLoadingOverlay mode={pendingMode} progress={analysisProgress} onCancel={pendingMode === 'cel' && analysisProgress.jobId ? cancelCelAnalysis : undefined} />}
     </div>
   )
 }
