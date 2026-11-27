@@ -96,3 +96,37 @@ export async function predictCel(modelName, file, onUploadProgress) {
   )
   return data
 }
+
+// --- CEL analysis jobs with live processing stages (see celJob.js) ---
+
+export async function createCelJob(modelName, file, onUploadProgress) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await client.post(
+    `/predict_cel_jobs/${encodeURIComponent(modelName)}`,
+    form,
+    // Covers the upload only; processing is followed through the job's event stream.
+    { timeout: 360000, onUploadProgress },
+  )
+  return data
+}
+
+export async function fetchCelJobResult(jobId) {
+  const { data } = await client.get(`/predict_cel_jobs/${encodeURIComponent(jobId)}/result`)
+  return data
+}
+
+export async function cancelCelJob(jobId, { keepalive = false } = {}) {
+  const url = `${API_BASE.replace(/\/+$/, '')}/predict_cel_jobs/${encodeURIComponent(jobId)}`
+  if (keepalive && typeof fetch === 'function') {
+    // Survives page unload, so leaving the page does not leave the job running.
+    return fetch(url, { method: 'DELETE', keepalive: true }).catch(() => {})
+  }
+  return client.delete(`/predict_cel_jobs/${encodeURIComponent(jobId)}`).catch(() => {})
+}
+
+// An API deployment from before CEL jobs existed answers the job route with FastAPI's
+// generic 404 ("Not Found"); an unknown model answers "Model not found".
+export function isMissingCelJobRoute(error) {
+  return error?.response?.status === 404 && error?.response?.data?.detail === 'Not Found'
+}

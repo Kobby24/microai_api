@@ -16,6 +16,12 @@ if (!requireNamespace("affy", quietly = TRUE)) {
 # carries only the JSON payload parsed by main.run_affy_preprocessing().
 sink(stderr())
 
+# Progress markers for live status updates. message() writes to stderr only, so the
+# JSON on stdout and every computation below are unchanged. r_runtime.py turns these
+# lines (plus affy's own "N ids to be processed" line) into processing-stage events.
+stage <- function(name) message("MICROAI_STAGE ", name)
+
+stage("loading_affy")
 library(affy)
 
 # Memory: register the pre-exported HG-U133A probe map (see install_r_packages.R)
@@ -33,8 +39,11 @@ if (file.exists(cdf_rds)) {
   message("MAS5: ", cdf_rds, " not found; falling back to the hgu133acdf package (higher memory).")
 }
 
+stage("reading_cel")
 cel_data <- ReadAffy(filenames = cel_path, compress = TRUE)
+stage("mas5")
 processed <- mas5(cel_data, normalize = TRUE, sc = 600)
+stage("extracting")
 log_expression <- log2(exprs(processed))
 
 feature_ids <- rownames(log_expression)
@@ -44,6 +53,7 @@ values <- as.numeric(log_expression[, 1])
 rm(cel_data, processed, log_expression)
 invisible(gc())
 
+stage("exporting")
 sink()
 
 escaped_ids <- vapply(feature_ids, function(id) {
